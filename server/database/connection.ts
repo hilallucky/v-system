@@ -1,23 +1,18 @@
 import mysql, { type Pool } from "mysql2/promise";
+import { settings } from "../config/settings.js";
 
 export class DatabaseConnection {
   static async connect(): Promise<Pool> {
-    const port = Number(process.env.DB_PORT ?? 3306);
-    if (!Number.isInteger(port) || port < 1 || port > 65_535) {
-      throw new Error("DB_PORT must be an integer between 1 and 65535.");
-    }
-
-    const databaseName = process.env.DB_NAME ?? "bank_content";
     const bootstrap = await mysql.createConnection({
-      host: process.env.DB_HOST ?? "127.0.0.1",
-      port,
-      user: process.env.DB_USER ?? "root",
-      password: process.env.DB_PASSWORD ?? "",
+      host: settings.database.host,
+      port: settings.database.port,
+      user: settings.database.user,
+      password: settings.database.password,
       charset: "utf8mb4",
     });
 
     try {
-      const escapedDatabaseName = databaseName.replaceAll("`", "``");
+      const escapedDatabaseName = settings.database.name.replaceAll("`", "``");
       await bootstrap.query(
         `CREATE DATABASE IF NOT EXISTS \`${escapedDatabaseName}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
       );
@@ -26,11 +21,11 @@ export class DatabaseConnection {
     }
 
     const pool = mysql.createPool({
-      host: process.env.DB_HOST ?? "127.0.0.1",
-      port,
-      user: process.env.DB_USER ?? "root",
-      password: process.env.DB_PASSWORD ?? "",
-      database: databaseName,
+      host: settings.database.host,
+      port: settings.database.port,
+      user: settings.database.user,
+      password: settings.database.password,
+      database: settings.database.name,
       charset: "utf8mb4",
       timezone: "Z",
       waitForConnections: true,

@@ -1,4 +1,16 @@
-import { AlertCircle, Download, ExternalLink, FileText, FolderClosed, FolderOpen, Globe2, LoaderCircle } from "lucide-react";
+import {
+  AlertCircle,
+  Download,
+  ExternalLink,
+  FileSpreadsheet,
+  FileText,
+  FolderClosed,
+  FolderOpen,
+  Globe2,
+  Image as ImageIcon,
+  LoaderCircle,
+  Presentation,
+} from "lucide-react";
 import type { ContentItem } from "../lib/api";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
@@ -35,7 +47,98 @@ function formatDate(value: string) {
 function displayType(item: ContentItem) {
   if (item.kind === "folder") return "Folder";
   if (item.kind === "link") return "Website";
-  return item.name.split(".").pop()?.toUpperCase() ?? "File";
+  return item.name.split(".").pop()?.toUpperCase() || "File";
+}
+
+function fileTypeStyle(item: ContentItem) {
+  const extension = item.name.split(".").pop()?.toLowerCase();
+  if (extension === "pdf") {
+    return { label: "PDF", color: "text-red-700", background: "bg-red-50", icon: FileText };
+  }
+  if (extension === "docx") {
+    return { label: "WORD", color: "text-blue-700", background: "bg-blue-50", icon: FileText };
+  }
+  if (extension === "xlsx") {
+    return { label: "EXCEL", color: "text-emerald-700", background: "bg-emerald-50", icon: FileSpreadsheet };
+  }
+  if (extension === "csv") {
+    return { label: "CSV", color: "text-teal-700", background: "bg-teal-50", icon: FileSpreadsheet };
+  }
+  if (extension === "pptx") {
+    return { label: "SLIDES", color: "text-orange-700", background: "bg-orange-50", icon: Presentation };
+  }
+  if (item.mimeType?.startsWith("image/") || ["png", "jpg", "jpeg"].includes(extension ?? "")) {
+    return { label: "IMAGE", color: "text-violet-700", background: "bg-violet-50", icon: ImageIcon };
+  }
+  return { label: "FILE", color: "text-slate-600", background: "bg-slate-100", icon: FileText };
+}
+
+function FileTypeThumbnail({ item, compact = false }: { item: ContentItem; compact?: boolean }) {
+  const type = fileTypeStyle(item);
+  const Icon = type.icon;
+  const extension = item.name.split(".").pop()?.toLowerCase();
+  const isImage = item.mimeType?.startsWith("image/") || ["png", "jpg", "jpeg"].includes(extension ?? "");
+
+  return (
+    <span
+      className={cn(
+        "relative grid shrink-0 place-items-center overflow-hidden",
+        compact ? "size-9 rounded-lg" : "h-36 w-full",
+        type.background,
+      )}
+      aria-label={`${type.label} file`}
+    >
+      {item.hasContent && isImage && (
+        <img
+          src={`/api/v1/files/${encodeURIComponent(item.id)}/preview`}
+          alt=""
+          loading="lazy"
+          className="absolute inset-0 h-full w-full object-cover"
+          onError={event => event.currentTarget.classList.add("hidden")}
+        />
+      )}
+      {!compact && ["xlsx", "csv"].includes(extension ?? "") ? (
+        <span className="grid h-20 w-24 grid-cols-4 grid-rows-4 overflow-hidden rounded-md border border-emerald-200 bg-white shadow-sm">
+          {Array.from({ length: 16 }, (_, index) => (
+            <span
+              key={index}
+              className={cn(
+                "border-b border-r border-emerald-100",
+                index < 4 && "bg-emerald-100",
+                index === 4 && "bg-emerald-50",
+              )}
+            />
+          ))}
+          <span className="absolute bottom-2 right-2 rounded bg-emerald-700 px-1.5 py-1 text-[8px] font-bold tracking-wide text-white">
+            {type.label}
+          </span>
+        </span>
+      ) : !compact && extension === "pptx" ? (
+        <span className="relative grid h-20 w-28 place-items-center rounded-md border border-orange-200 bg-white shadow-sm">
+          <span className="absolute left-3 right-3 top-3 h-2 rounded-sm bg-orange-100" />
+          <span className="h-7 w-14 rounded-sm bg-orange-50" />
+          <span className="absolute bottom-2 right-2 rounded bg-orange-600 px-1.5 py-1 text-[8px] font-bold tracking-wide text-white">
+            PPTX
+          </span>
+        </span>
+      ) : (
+        <span
+          className={cn(
+            "relative grid place-items-center",
+            compact ? type.color : "size-20 rounded-2xl border border-white/80 bg-white shadow-sm",
+            !compact && type.color,
+          )}
+        >
+          <Icon size={compact ? 18 : 34} strokeWidth={1.7} />
+          {!compact && (
+            <span className={cn("absolute -bottom-1 rounded px-1.5 py-0.5 text-[8px] font-bold tracking-wide text-white", type.color.replace("text-", "bg-"))}>
+              {type.label}
+            </span>
+          )}
+        </span>
+      )}
+    </span>
+  );
 }
 
 function itemIcon(item: ContentItem) {
@@ -53,20 +156,7 @@ function itemIcon(item: ContentItem) {
       </span>
     );
   }
-  const extension = item.name.split(".").pop()?.toLowerCase();
-  const style =
-    extension === "pdf"
-      ? "bg-red-50 text-red-600"
-      : ["xlsx", "csv"].includes(extension ?? "")
-        ? "bg-emerald-50 text-emerald-700"
-        : extension === "pptx"
-          ? "bg-orange-50 text-orange-700"
-          : "bg-blue-50 text-blue-700";
-  return (
-    <span className={cn("grid size-9 shrink-0 place-items-center rounded-lg", style)}>
-      <FileText size={17} />
-    </span>
-  );
+  return <FileTypeThumbnail item={item} compact />;
 }
 
 function ItemName({
@@ -124,8 +214,6 @@ function ThumbnailItem({
   onOpen: (item: ContentItem) => void;
   onDownload: (item: ContentItem) => void;
 }) {
-  const isImage = item.kind === "file" && item.mimeType?.startsWith("image/");
-  const extension = item.kind === "file" ? displayType(item) : null;
   const linkHost =
     item.kind === "link" && item.url ? new URL(item.url).hostname.replace(/^www\./i, "") : null;
 
@@ -152,13 +240,8 @@ function ThumbnailItem({
               referrerPolicy="no-referrer"
               className="h-full w-full object-cover"
             />
-          ) : isImage && item.hasContent ? (
-            <img
-              src={`/api/v1/files/${encodeURIComponent(item.id)}/preview`}
-              alt=""
-              loading="lazy"
-              className="h-full w-full object-cover"
-            />
+          ) : item.kind === "file" ? (
+            <FileTypeThumbnail item={item} />
           ) : (
             <span
               className={cn(
@@ -176,9 +259,6 @@ function ThumbnailItem({
                 <Globe2 size={30} />
               ) : (
                 <FileText size={30} />
-              )}
-              {extension && (
-                <span className="sr-only">{extension} file</span>
               )}
             </span>
           )}

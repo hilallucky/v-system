@@ -3,12 +3,16 @@ import { AlertCircle, Check, ChevronRight, Download, LoaderCircle, Search, X } f
 import { useEffect, useRef, useState } from "react";
 import { AddLinkDialog } from "./components/add-link-dialog";
 import { AuthPanel } from "./components/auth-panel";
-import { AppSidebar, type WorkspaceView } from "./components/app-sidebar";
+import { AppSidebar, type WorkspacePage, type WorkspaceView } from "./components/app-sidebar";
 import { FileList, FileListHeader, type Sort } from "./components/file-list";
 import { FileToolbar } from "./components/file-toolbar";
 import { WorkspaceHeader } from "./components/workspace-header";
 import { WorkspaceStatsCards } from "./components/workspace-stats";
 import { UserProfileDialog } from "./components/user-profile-dialog";
+import { AdminDashboard } from "./features/admin/admin-dashboard";
+import { FollowUpsPanel } from "./features/follow-ups/follow-ups-panel";
+import { OfficeDocumentPreview } from "./features/content/office-document-preview";
+import type { OfficePreviewFormat } from "./features/content/office-preview";
 import { Button } from "./components/ui/button";
 import { Card } from "./components/ui/card";
 import {
@@ -40,6 +44,7 @@ type Layout = "list" | "grid";
 function App() {
   const queryClient = useQueryClient();
   const [view, setView] = useState<WorkspaceView>("all");
+  const [page, setPage] = useState<WorkspacePage>("content");
   const [folderId, setFolderId] = useState<string | null>(null);
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
@@ -50,6 +55,7 @@ function App() {
   const [linkDialogOpen, setLinkDialogOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [previewItem, setPreviewItem] = useState<ContentItem | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
   const [notice, setNotice] = useState<{ kind: "success" | "error"; text: string } | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -97,6 +103,10 @@ function App() {
     const timer = setTimeout(() => setSearch(searchInput.trim()), 250);
     return () => clearTimeout(timer);
   }, [searchInput]);
+
+  useEffect(() => {
+    setPage(authQuery.data?.role === "admin" ? "admin" : "content");
+  }, [authQuery.data?.id, authQuery.data?.role]);
 
   useEffect(
     () => () => {
@@ -212,18 +222,38 @@ function App() {
     ]);
   }
 
-  async function handleUpload(file: File | undefined) {
-    if (!file) return;
+  async function handleUpload(files: File[]) {
+    if (!files.length || isUploading) return;
+    setIsUploading(true);
+    const uploaded: string[] = [];
+    const failed: string[] = [];
     try {
-      await uploadFile(file, folderId);
-      await invalidateContent();
-      notify(`${file.name} uploaded.`);
-    } catch (error) {
-      notify(error instanceof Error ? error.message : "File upload failed.", "error");
+      for (const file of files) {
+        try {
+          await uploadFile(file, folderId);
+          uploaded.push(file.name);
+        } catch (error) {
+          failed.push(`${file.name}: ${error instanceof Error ? error.message : "Upload failed."}`);
+        }
+      }
+      if (uploaded.length) await invalidateContent();
+      if (failed.length) {
+        const failureSummary = failed.slice(0, 3).join("; ");
+        const remaining = failed.length > 3 ? `; and ${failed.length - 3} more` : "";
+        notify(
+          `${uploaded.length} of ${files.length} files uploaded. Failed: ${failureSummary}${remaining}`,
+          "error",
+        );
+      } else {
+        notify(`${uploaded.length} ${uploaded.length === 1 ? "file" : "files"} uploaded.`);
+      }
+    } finally {
+      setIsUploading(false);
     }
   }
 
   function goToView(nextView: WorkspaceView) {
+    setPage("content");
     setView(nextView);
     setFolderId(null);
     setSearchInput("");
@@ -231,6 +261,7 @@ function App() {
   }
 
   function openFolder(folder: ContentItem) {
+    setPage("content");
     setFolderId(folder.id);
     setView("all");
     setSearchInput("");
@@ -269,6 +300,16 @@ function App() {
     );
   }
 
+  function officePreviewFormat(item: ContentItem): OfficePreviewFormat | null {
+    const extension = item.name.split(".").pop()?.toLowerCase();
+    if (extension === "docx" || extension === "xlsx" || extension === "pptx") {
+      return extension;
+    }
+    return null;
+  }
+
+  const previewFormat = previewItem ? officePreviewFormat(previewItem) : null;
+
   return (
     <div className="min-h-screen bg-canvas">
       <WorkspaceHeader
@@ -285,6 +326,8 @@ function App() {
       <div className="flex min-h-[calc(100vh-4rem)]">
         <AppSidebar
           view={view}
+          page={page}
+          isAdmin={authQuery.data.role === "admin"}
           folderId={folderId}
           folderPathIds={currentPath.map(entry => entry.id)}
           rootFolders={rootFolders}
@@ -292,10 +335,29 @@ function App() {
           departmentsError={rootQuery.isError ? rootQuery.error.message : undefined}
           onRetryDepartments={() => void rootQuery.refetch()}
           onSelectView={goToView}
+          onSelectPage={nextPage => {
+            setPage(nextPage);
+            setSearch("");
+            setSearchInput("");
+          }}
           onSelectFolder={openFolder}
         />
 
         <main className="min-w-0 flex-1 px-4 py-6 sm:px-7 lg:px-9">
+          {page === "follow-ups" ? (
+            <FollowUpsPanel user={authQuery.data} />
+          ) : page === "admin" && authQuery.data.role === "admin" ? (
+            <AdminDashboard
+              user={authQuery.data}
+              stats={statsQuery.data}
+              statsError={statsQuery.isError ? statsQuery.error.message : undefined}
+              onRetryStats={() => void statsQuery.refetch()}
+              onOpenPage={nextPage => {
+                setPage(nextPage);
+                if (nextPage === "content") goToView("all");
+              }}
+            />
+          ) : (
           <div className="mx-auto max-w-[1280px]">
             <div className="mb-5 flex items-center justify-between gap-3">
               <div className="min-w-0">
@@ -323,7 +385,7 @@ function App() {
                         : `Your ${pageTitle.toLowerCase()} files, all in one place.`}
                 </p>
               </div>
-              <Dialog
+              {authQuery.data.role === "admin" && <Dialog
                 open={dialogOpen}
                 onOpenChange={open => {
                   setDialogOpen(open);
@@ -376,20 +438,21 @@ function App() {
                     </div>
                   </form>
                 </DialogContent>
-              </Dialog>
+              </Dialog>}
             </div>
 
-            <FileToolbar
+            {authQuery.data.role === "admin" && <FileToolbar
               sort={sort}
               layout={layout}
               onSortChange={setSort}
               onLayoutChange={() => setLayout(current => (current === "list" ? "grid" : "list"))}
-              onUpload={file => void handleUpload(file)}
+              isUploading={isUploading}
+              onUpload={files => void handleUpload(files)}
               onAddLink={() => {
                 addLinkMutation.reset();
                 setLinkDialogOpen(true);
               }}
-            />
+            />}
 
             <label className="relative mb-4 flex items-center sm:hidden">
               <Search size={15} className="absolute left-3 text-slate-400" />
@@ -479,6 +542,7 @@ function App() {
               {/* <span>Secure workspace · API connected</span> */}
             </div>
           </div>
+          )}
         </main>
       </div>
 
@@ -538,6 +602,11 @@ function App() {
                   title={`Preview of ${previewItem.name}`}
                   src={`/api/v1/files/${encodeURIComponent(previewItem.id)}/preview`}
                   className="h-[min(65vh,640px)] w-full bg-white p-4"
+                />
+              ) : previewFormat ? (
+                <OfficeDocumentPreview
+                  fileId={previewItem.id}
+                  format={previewFormat}
                 />
               ) : (
                 <div className="max-w-md px-6 py-12 text-center">

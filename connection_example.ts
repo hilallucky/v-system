@@ -3,5 +3,5 @@ export const databaseConnectionExample = {
   port: 3306,
   user: "your_mysql_user",
   password: "replace-with-your-local-password",
-  database: "bank_content",
+  database: "v_system",
 };

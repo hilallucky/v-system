@@ -15,15 +15,7 @@ npm install
 npm run dev
 ```
 
-Start the MySQL server first. The API connects using these environment variables:
-
-| Variable | Default | Description |
-| --- | --- | --- |
-| `DB_HOST` | `127.0.0.1` | MySQL server host |
-| `DB_PORT` | `3306` | MySQL server port |
-| `DB_USER` | `root` | MySQL username |
-| `DB_PASSWORD` | empty | MySQL password |
-| `DB_NAME` | `bank_content` | Database name |
+Copy `.env.example` to `.env`, then configure the MySQL connection and local file directory. Start the MySQL server first.
 
 For a local PowerShell session, configure credentials before starting the app:
 
@@ -33,9 +25,22 @@ $env:DB_PASSWORD = "your-local-mysql-password"
 npm run dev
 ```
 
-On startup, the API creates `DB_NAME` if it does not exist, then applies pending SQL migrations and starts listening. The configured MySQL account therefore needs permission to create the database. Run the app with a least-privilege account in production. Open the Vite URL printed in the terminal; the API listens on `http://127.0.0.1:3001` and Vite proxies `/api` requests to it. Uploaded files are stored in the local `data/` directory. Set `DATA_DIR` to change that location.
+On startup, the API creates `DB_NAME` (default: `v_system`) if it does not exist, then applies pending SQL migrations and starts listening. The configured MySQL account therefore needs permission to create the database. Run the app with a least-privilege account in production. Open the Vite URL printed in the terminal; the API listens on `http://127.0.0.1:3001` and Vite proxies `/api` requests to it. Uploaded files are stored in `DATA_DIR`.
 
-Database schema and initial demo rows are defined in `server/database/migrations/`. Applied migrations are recorded in `schema_migrations`; add a new numbered SQL file (for example, `003_add_category.sql`) to make a schema change. Existing SQLite databases are left untouched and are not automatically imported into MySQL.
+Database schema and initial demo rows are defined in `server/database/migrations/`. Bank-content tables use the `bc_` prefix (`bc_items`, `bc_follow_ups`, `bc_user_roles`); playbook tables use `pb_`; shared user accounts, sessions and the migration ledger use `users`, `sessions` and `schema_migrations`. User accounts and login sessions are shared, while each application's authorization roles remain application-specific. Add a new numbered SQL file to make a schema change. At startup, legacy unprefixed bank-content tables are renamed to their prefixed equivalents. The pending migration renames the shared identity and migration tables in place. If both old and new table names exist, startup stops instead of risking data loss.
+
+See [docs/architecture.md](./docs/architecture.md) for the current module layout, intended feature boundaries, and infrastructure roadmap. Admin and user roles and follow-up workflows are implemented on MySQL. PostgreSQL/SQLite adapters, message brokers and SMTP delivery remain infrastructure targets.
+
+Public sign-up always creates a user. To promote a trusted account to administrator, connect to the configured database and run:
+
+```sql
+UPDATE bc_user_roles
+JOIN users ON users.id = bc_user_roles.user_id
+SET bc_user_roles.role = 'admin'
+WHERE users.email = 'admin@example.com';
+```
+
+Only administrators can create folders, add links, or upload files. Users can browse, preview and download bank content, and can create and track their own follow-ups. Administrators can view and update the status of every follow-up.
 
 For a production-style local run:
 
@@ -58,6 +63,9 @@ All responses use a `{ "data": ... }` success envelope or an `{ "error": { "mess
 | `POST` | `/api/v1/auth/logout` | End the current session |
 | `GET` | `/api/v1/auth/me` | Get the current user's profile |
 | `PUT` | `/api/v1/auth/profile` | Update the current user's name and email |
+| `GET` | `/api/v1/follow-ups` | List the current user's follow-ups (all follow-ups for administrators) |
+| `POST` | `/api/v1/follow-ups` | Create a follow-up |
+| `PATCH` | `/api/v1/follow-ups/:id` | Update follow-up status (administrator only) |
 | `GET` | `/api/v1/items?folderId=root&view=all&sort=name` | List contents, or search all content with `search=` |
 | `GET` | `/api/v1/stats` | Workspace document, folder, review, and storage totals |
 | `GET` | `/api/v1/folders/:id/path` | Get a folder's breadcrumb path |
@@ -67,8 +75,8 @@ All responses use a `{ "data": ... }` success envelope or an `{ "error": { "mess
 | `GET` | `/api/v1/files/:id/preview` | Display supported uploaded content inline for preview |
 | `GET` | `/api/v1/files/:id/download` | Download an uploaded file |
 
-The sidebar displays folders as an expandable tree; nested folders load as their parents are expanded. The file toolbar switches between list and thumbnail views and can save website links. Link thumbnails use Open Graph metadata from public HTTP(S) websites; the server limits redirects, response size, and request time, and blocks private or reserved IP addresses. External thumbnail images are loaded from their source website by the browser, and opening a saved link navigates to that website. Uploaded PDFs, images, and CSV files can be previewed in the app; other formats can be downloaded and opened in a compatible application. Sample documents contain metadata only and cannot be previewed. Create an account with a name, email, and password of at least 10 characters. Accounts use scrypt password hashes and opaque, server-side sessions stored in MySQL; session cookies are HTTP-only and same-site, and signup/login are rate-limited. In production, configure HTTPS and protect database credentials. Uploads are limited to 20 MB per file and accept PDF, CSV, DOCX, XLSX, PPTX, PNG, and JPEG. Folder names and API inputs are validated on the server. MySQL metadata and generated server-side upload names are used instead of trusting client-provided storage paths.
+The sidebar displays folders as an expandable tree; nested folders load as their parents are expanded. Administrators can choose multiple files at once or drag and drop them onto the upload toolbar; each file uploads separately, so a failed file does not prevent the remaining files from uploading. Each file is limited to 20 MB. The file toolbar switches between list and thumbnail views and can save website links. Link thumbnails use Open Graph metadata from public HTTP(S) websites; the server limits redirects, response size, and request time, and blocks private or reserved IP addresses. External thumbnail images are loaded from their source website by the browser, and opening a saved link navigates to that website. Uploaded PDFs, CSV, DOCX, XLSX, PPTX, PNG and JPEG files can be previewed in the app; office documents are rendered locally in the browser and are not sent to an external preview service. Sample documents contain metadata only and cannot be previewed. Create an account with a name, email, and password of at least 10 characters. Accounts use scrypt password hashes and opaque, server-side sessions stored in MySQL; session cookies are HTTP-only and same-site, and signup/login are rate-limited. In production, configure HTTPS and protect database credentials. Uploads accept PDF, CSV, DOCX, XLSX, PPTX, PNG, and JPEG. Folder names and API inputs are validated on the server. MySQL metadata and generated server-side upload names are used instead of trusting client-provided storage paths.
 
 ## Important security boundary
 
-This is a **local development prototype**, not a production banking system. The API binds to loopback and uses synthetic sample metadata. Authentication is implemented, but all logged-in users currently share the same workspace; there are no roles, per-user/tenant access rules, malware scanning, or audit log. Sample documents have no underlying file content. Do not expose the server to a network or upload real customer or banking data. Before production use, integrate the bank's identity provider and enforce role-based access, tenant isolation, audit logging, malware scanning, retention, and approved encrypted storage.
+This is a **local development prototype**, not a production banking system. The API binds to loopback and uses synthetic sample metadata. Admin and user roles are enforced for content writes and follow-up management, but users still share a common read-only bank content library; tenant isolation, malware scanning and audit logging are not implemented. Public sign-up creates user accounts only. To grant an administrator, first create their account, then set `role` to `admin` for that account in the configured MySQL database. Sample documents have no underlying file content. Do not expose the server to a network or upload real customer or banking data. Before production use, integrate the bank's identity provider and implement tenant isolation, audit logging, malware scanning, retention, and approved encrypted storage.

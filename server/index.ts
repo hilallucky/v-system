@@ -1,10 +1,7 @@
-import { createApp } from "./app.js";
+import "./config/load-env.js";
+import { createApp } from "./api/app.js";
 import { database, runMigrations } from "./database.js";
-
-const port = Number(process.env.PORT ?? 3001);
-if (!Number.isInteger(port) || port < 1 || port > 65_535) {
-  throw new Error("PORT must be an integer between 1 and 65535.");
-}
+import { settings } from "./config/settings.js";
 
 async function start() {
   const pool = await database;
@@ -15,8 +12,8 @@ async function start() {
     throw error;
   }
   const app = createApp();
-  app.listen(port, "127.0.0.1", () => {
-    console.info(`Bank Content API listening on http://127.0.0.1:${port}`);
+  app.listen(settings.port, "127.0.0.1", () => {
+    console.info(`Bank Content API listening on http://127.0.0.1:${settings.port}`);
   });
 }
 

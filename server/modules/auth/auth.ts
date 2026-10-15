@@ -2,17 +2,18 @@ import { randomBytes, randomUUID, scrypt as scryptCallback, createHash, timingSa
 import { promisify } from "node:util";
 import type { Request, Response, NextFunction } from "express";
 import type { RowDataPacket } from "mysql2/promise";
-import { database } from "./database.js";
-import { ApiError } from "./types.js";
+import { database } from "../../database.js";
+import { ApiError } from "../../types.js";
 
 const scrypt = promisify(scryptCallback);
-const sessionCookieName = "bank_content_session";
+const sessionCookieName = "v_system_session";
 const sessionLifetimeSeconds = 60 * 60 * 24 * 7;
 
 export interface UserProfile {
   id: string;
   fullName: string;
   email: string;
+  role: "admin" | "user";
   createdAt: string;
 }
 
@@ -20,6 +21,7 @@ interface UserRow extends RowDataPacket {
   id: string;
   full_name: string;
   email: string;
+  role: "admin" | "user";
   password_hash?: string;
   password_salt?: string;
   created_at: Date | string;
@@ -38,6 +40,7 @@ function toProfile(row: UserRow): UserProfile {
     id: row.id,
     fullName: row.full_name,
     email: row.email,
+    role: row.role,
     createdAt: new Date(row.created_at).toISOString(),
   };
 }
@@ -105,10 +108,24 @@ export async function signUp(
   const passwordHash = (await derivePassword(input.password, salt)).toString("hex");
 
   try {
-    await db.execute(
-      "INSERT INTO users (id, full_name, email, password_hash, password_salt) VALUES (?, ?, ?, ?, ?)",
-      [id, input.fullName, input.email, passwordHash, salt],
-    );
+    const connection = await db.getConnection();
+    try {
+      await connection.beginTransaction();
+      await connection.execute(
+        "INSERT INTO users (id, full_name, email, password_hash, password_salt) VALUES (?, ?, ?, ?, ?)",
+        [id, input.fullName, input.email, passwordHash, salt],
+      );
+      await connection.execute(
+        "INSERT INTO bc_user_roles (user_id, role) VALUES (?, 'user')",
+        [id],
+      );
+      await connection.commit();
+    } catch (error) {
+      await connection.rollback();
+      throw error;
+    } finally {
+      connection.release();
+    }
   } catch (error) {
     if (isDuplicateEntry(error)) {
       throw new ApiError(409, "An account with that email already exists.");
@@ -121,6 +138,7 @@ export async function signUp(
     id,
     fullName: input.fullName,
     email: input.email,
+    role: "user" as const,
     createdAt: new Date().toISOString(),
   };
 }
@@ -128,7 +146,12 @@ export async function signUp(
 export async function logIn(input: { email: string; password: string }, response: Response) {
   const db = await database;
   const [rows] = await db.execute<UserRow[]>(
-    "SELECT id, full_name, email, password_hash, password_salt, created_at FROM users WHERE email = ?",
+    `SELECT users.id, users.full_name, users.email,
+       bc_user_roles.role, users.password_hash, users.password_salt,
+       users.created_at
+     FROM users
+     JOIN bc_user_roles ON bc_user_roles.user_id = users.id
+     WHERE users.email = ?`,
     [input.email],
   );
   const user = rows[0];
@@ -153,13 +176,28 @@ export async function getAuthenticatedUser(request: Request) {
 
   const db = await database;
   const [rows] = await db.execute<UserRow[]>(
-    `SELECT users.id, users.full_name, users.email, users.created_at
-     FROM sessions JOIN users ON users.id = sessions.user_id
+    `SELECT users.id, users.full_name, users.email,
+       bc_user_roles.role, users.created_at
+     FROM sessions
+     JOIN users ON users.id = sessions.user_id
+     JOIN bc_user_roles ON bc_user_roles.user_id = users.id
      WHERE sessions.token_hash = ? AND sessions.expires_at > UTC_TIMESTAMP()`,
     [hashToken(token)],
   );
   if (!rows[0]) throw new ApiError(401, "Your session has expired. Please log in again.");
   return toProfile(rows[0]);
+}
+
+export function requireAdmin(
+  _request: Request,
+  response: Response,
+  next: NextFunction,
+) {
+  if (response.locals.user.role !== "admin") {
+    next(new ApiError(403, "Administrator access is required."));
+    return;
+  }
+  next();
 }
 
 export async function authenticateSession(
@@ -202,7 +240,11 @@ export async function updateProfile(
     throw error;
   }
   const [rows] = await db.execute<UserRow[]>(
-    "SELECT id, full_name, email, created_at FROM users WHERE id = ?",
+    `SELECT users.id, users.full_name, users.email,
+       bc_user_roles.role, users.created_at
+     FROM users
+     JOIN bc_user_roles ON bc_user_roles.user_id = users.id
+     WHERE users.id = ?`,
     [userId],
   );
   if (!rows[0]) throw new ApiError(404, "User profile was not found.");

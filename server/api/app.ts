@@ -9,15 +9,16 @@ import { rateLimit } from "express-rate-limit";
 import helmet from "helmet";
 import multer from "multer";
 import { z } from "zod";
-import { database } from "./database.js";
+import { database } from "../database.js";
 import {
   authenticateSession,
   getAuthenticatedUser,
   logIn,
   logOut,
+  requireAdmin,
   signUp,
   updateProfile,
-} from "./auth.js";
+} from "../modules/auth/auth.js";
 import {
   addLink,
   addFile,
@@ -28,8 +29,13 @@ import {
   getStats,
   removeUnrecordedUpload,
   uploadMiddleware,
-} from "./routes.js";
-import { ApiError } from "./types.js";
+} from "../modules/content/content.js";
+import {
+  createFollowUp,
+  listFollowUps,
+  updateFollowUp,
+} from "../modules/follow-ups/service.js";
+import { ApiError } from "../types.js";
 
 const uuidSchema = z.string().uuid();
 const folderInput = z.object({
@@ -65,6 +71,15 @@ const logInInput = z.object({
 const profileInput = z.object({
   fullName: z.string().trim().min(1).max(120),
   email: z.string().trim().email().max(254).transform(value => value.toLowerCase()),
+});
+const followUpInput = z.object({
+  title: z.string().trim().min(1).max(180),
+  description: z.string().trim().min(1).max(5000),
+  dueDate: z.string().date().nullable().optional().default(null),
+});
+const followUpUpdateInput = z.object({
+  status: z.enum(["open", "in_progress", "resolved"]),
+  assignedTo: uuidSchema.nullable().optional(),
 });
 
 export function createApp() {
@@ -122,6 +137,26 @@ export function createApp() {
     response.json({ data: await updateProfile(response.locals.user.id, input) });
   });
 
+  api.get("/follow-ups", async (_request, response) => {
+    const user = response.locals.user;
+    response.json({ data: await listFollowUps(user.id, user.role === "admin") });
+  });
+
+  api.post("/follow-ups", async (request, response) => {
+    const input = followUpInput.parse(request.body);
+    response.status(201).json({
+      data: await createFollowUp(input, response.locals.user.id),
+    });
+  });
+
+  api.patch("/follow-ups/:id", requireAdmin, async (request, response) => {
+    const id = uuidSchema.parse(request.params.id);
+    const input = followUpUpdateInput.parse(request.body);
+    response.json({
+      data: await updateFollowUp(id, input),
+    });
+  });
+
   api.get("/items", async (request, response) => {
     const query = itemQuery.parse(request.query);
     response.json({
@@ -143,20 +178,20 @@ export function createApp() {
     response.json({ data: await getFolderPath(id) });
   });
 
-  api.post("/folders", async (request, response) => {
+  api.post("/folders", requireAdmin, async (request, response) => {
     const input = folderInput.parse(request.body);
     const folder = await addFolder(input, response.locals.user.fullName);
     response.status(201).json({ data: folder });
   });
 
-  api.post("/links", async (request, response) => {
+  api.post("/links", requireAdmin, async (request, response) => {
     const input = linkInput.parse(request.body);
     response.status(201).json({
       data: await addLink(input, response.locals.user.fullName),
     });
   });
 
-  api.post("/files", uploadMiddleware, async (request, response) => {
+  api.post("/files", requireAdmin, uploadMiddleware, async (request, response) => {
     if (!request.file) throw new ApiError(400, "Choose a file to upload.");
     let parentId: string | null;
     try {

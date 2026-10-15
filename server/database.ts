@@ -3,20 +3,83 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Pool, RowDataPacket } from "mysql2/promise";
 import { DatabaseConnection } from "./database/connection.js";
+import { settings } from "./config/settings.js";
 
-const dataDirectory = path.resolve(process.env.DATA_DIR ?? "data");
-export const uploadDirectory = path.join(dataDirectory, "uploads");
+export const uploadDirectory = path.join(settings.fileStorage.directory, "uploads");
 mkdirSync(uploadDirectory, { recursive: true });
 
 export const database = DatabaseConnection.connect();
 
+async function migrateLegacyTableNames(pool: Pool, includeLegacyIdentityTables: boolean) {
+  const mappings = [
+    ["items", "bc_items"],
+    ["follow_ups", "bc_follow_ups"],
+    ...(includeLegacyIdentityTables
+      ? ([["users", "bc_users"], ["sessions", "bc_sessions"]] as const)
+      : []),
+  ] as const;
+  const legacyNames = mappings.flatMap(([legacy, current]) => [legacy, current]);
+  const placeholders = legacyNames.map(() => "?").join(", ");
+  const [rows] = await pool.execute<Array<{ table_name: string } & RowDataPacket>>(
+    `SELECT table_name FROM information_schema.tables
+     WHERE table_schema = DATABASE() AND table_name IN (${placeholders})`,
+    legacyNames,
+  );
+  const existing = new Set(rows.map(row => row.table_name));
+
+  const renames = mappings.filter(([legacy, current]) => {
+    if (existing.has(legacy) && existing.has(current)) {
+      throw new Error(
+        `Cannot migrate table "${legacy}": both "${legacy}" and "${current}" exist. Resolve the duplicate tables before starting the API.`,
+      );
+    }
+    return existing.has(legacy);
+  });
+  if (renames.length) {
+    await pool.query(
+      `RENAME TABLE ${renames.map(([legacy, current]) => `\`${legacy}\` TO \`${current}\``).join(", ")}`,
+    );
+    for (const [legacy, current] of renames) {
+      console.info(`Renamed legacy table ${legacy} to ${current}.`);
+    }
+  }
+}
+
 export async function runMigrations(pool: Pool) {
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS schema_migrations (
-      migration_name VARCHAR(255) PRIMARY KEY,
-      applied_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-    ) ENGINE=InnoDB
+  const [ledgerRows] = await pool.execute<Array<{ table_name: string } & RowDataPacket>>(`
+    SELECT table_name FROM information_schema.tables
+    WHERE table_schema = DATABASE()
+      AND table_name IN ('schema_migrations', 'others_schema_migrations')
   `);
+  const ledgers = new Set(ledgerRows.map(row => row.table_name));
+  if (ledgers.has("schema_migrations") && ledgers.has("others_schema_migrations")) {
+    throw new Error(
+      'Both "schema_migrations" and "others_schema_migrations" exist. Merge or remove the duplicate migration ledger before starting the API.',
+    );
+  }
+
+  let migrationTable: "schema_migrations" | "others_schema_migrations";
+  if (ledgers.has("schema_migrations")) {
+    migrationTable = "schema_migrations";
+  } else if (ledgers.has("others_schema_migrations")) {
+    migrationTable = "others_schema_migrations";
+  } else {
+    migrationTable = "schema_migrations";
+    await pool.query(`
+      CREATE TABLE schema_migrations (
+        migration_name VARCHAR(255) PRIMARY KEY,
+        applied_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+      ) ENGINE=InnoDB
+    `);
+  }
+
+  const identityMigrationName = "007_use_unprefixed_shared_tables.sql";
+  const [identityMigrationRows] = await pool.execute<Array<{ migration_name: string } & RowDataPacket>>(
+    `SELECT migration_name FROM \`${migrationTable}\` WHERE migration_name = ?`,
+    [identityMigrationName],
+  );
+  const sharedIdentityMigrationApplied = identityMigrationRows.length > 0;
+  await migrateLegacyTableNames(pool, !sharedIdentityMigrationApplied);
 
   const migrationDirectory = fileURLToPath(
     new URL("./database/migrations/", import.meta.url),
@@ -27,10 +90,34 @@ export async function runMigrations(pool: Pool) {
 
   for (const filename of migrationFiles) {
     const [applied] = await pool.execute<Array<{ migration_name: string } & RowDataPacket>>(
-      "SELECT migration_name FROM schema_migrations WHERE migration_name = ?",
+      `SELECT migration_name FROM \`${migrationTable}\` WHERE migration_name = ?`,
       [filename],
     );
     if (applied.length > 0) continue;
+
+    if (filename === identityMigrationName) {
+      const [sharedTables] = await pool.execute<Array<{ table_name: string } & RowDataPacket>>(`
+        SELECT table_name FROM information_schema.tables
+        WHERE table_schema = DATABASE()
+          AND table_name IN (
+            'users', 'others_users',
+            'sessions', 'others_sessions',
+            'schema_migrations', 'others_schema_migrations'
+          )
+      `);
+      const existingTables = new Set(sharedTables.map(row => row.table_name));
+      for (const [legacy, target] of [
+        ["others_users", "users"],
+        ["others_sessions", "sessions"],
+        ["others_schema_migrations", "schema_migrations"],
+      ]) {
+        if (existingTables.has(legacy) && existingTables.has(target)) {
+          throw new Error(
+            `Cannot migrate shared table "${legacy}": both "${legacy}" and "${target}" exist. Resolve the duplicate tables before starting the API.`,
+          );
+        }
+      }
+    }
 
     const sql = readFileSync(path.join(migrationDirectory, filename), "utf8");
     const statements = sql
@@ -44,8 +131,9 @@ export async function runMigrations(pool: Pool) {
       for (const statement of statements) {
         await connection.query(statement);
       }
+      if (filename === identityMigrationName) migrationTable = "schema_migrations";
       await connection.execute(
-        "INSERT INTO schema_migrations (migration_name) VALUES (?)",
+        `INSERT INTO \`${migrationTable}\` (migration_name) VALUES (?)`,
         [filename],
       );
       await connection.commit();

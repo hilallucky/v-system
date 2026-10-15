@@ -1,10 +1,10 @@
-INSERT INTO items (id, parent_id, name, kind, modified_at, owner, status) VALUES
+INSERT INTO bc_items (id, parent_id, name, kind, modified_at, owner, status) VALUES
   ('00000000-0000-4000-8000-000000000001', NULL, 'Accounts', 'folder', DATE_FORMAT(DATE_SUB(UTC_TIMESTAMP(3), INTERVAL 1 DAY), '%Y-%m-%dT%H:%i:%s.%fZ'), 'Alex Morgan', 'Approved'),
   ('00000000-0000-4000-8000-000000000002', NULL, 'Lending', 'folder', DATE_FORMAT(DATE_SUB(UTC_TIMESTAMP(3), INTERVAL 1 DAY), '%Y-%m-%dT%H:%i:%s.%fZ'), 'Alex Morgan', 'Approved'),
   ('00000000-0000-4000-8000-000000000003', NULL, 'Compliance', 'folder', DATE_FORMAT(DATE_SUB(UTC_TIMESTAMP(3), INTERVAL 1 DAY), '%Y-%m-%dT%H:%i:%s.%fZ'), 'Alex Morgan', 'Approved'),
   ('00000000-0000-4000-8000-000000000004', NULL, 'Marketing', 'folder', DATE_FORMAT(DATE_SUB(UTC_TIMESTAMP(3), INTERVAL 1 DAY), '%Y-%m-%dT%H:%i:%s.%fZ'), 'Alex Morgan', 'Approved');
 
-INSERT INTO items (id, parent_id, name, kind, mime_type, size, modified_at, owner, status, starred, shared) VALUES
+INSERT INTO bc_items (id, parent_id, name, kind, mime_type, size, modified_at, owner, status, starred, shared) VALUES
   ('00000000-0000-4000-8000-000000000101', '00000000-0000-4000-8000-000000000001', 'Quarterly account statement — Q3 2026.pdf', 'file', 'application/pdf', 1887436, DATE_FORMAT(UTC_TIMESTAMP(3), '%Y-%m-%dT%H:%i:%s.%fZ'), 'Alex Morgan', 'Approved', 1, 0),
   ('00000000-0000-4000-8000-000000000102', '00000000-0000-4000-8000-000000000001', 'Interest rates — October 2026.xlsx', 'file', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 700416, DATE_FORMAT(DATE_SUB(UTC_TIMESTAMP(3), INTERVAL 5 DAY), '%Y-%m-%dT%H:%i:%s.%fZ'), 'Taylor Reed', 'Approved', 0, 0),
   ('00000000-0000-4000-8000-000000000103', '00000000-0000-4000-8000-000000000001', 'Monthly transaction summary.csv', 'file', 'text/csv', 421888, DATE_FORMAT(DATE_SUB(UTC_TIMESTAMP(3), INTERVAL 8 DAY), '%Y-%m-%dT%H:%i:%s.%fZ'), 'Jordan Lee', 'Approved', 0, 0),

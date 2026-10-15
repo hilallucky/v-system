@@ -1,4 +1,4 @@
-ALTER TABLE items
+ALTER TABLE bc_items
   MODIFY kind ENUM('folder', 'file', 'link') NOT NULL,
   ADD COLUMN url VARCHAR(2048) NULL,
   ADD COLUMN thumbnail_url VARCHAR(2048) NULL,

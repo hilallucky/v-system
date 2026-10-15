@@ -37,7 +37,24 @@ export interface UserProfile {
   id: string;
   fullName: string;
   email: string;
+  role: "admin" | "user";
   createdAt: string;
+}
+
+export type FollowUpStatus = "open" | "in_progress" | "resolved";
+
+export interface FollowUp {
+  id: string;
+  createdBy: string;
+  creatorName: string;
+  assignedTo: string | null;
+  assigneeName: string | null;
+  title: string;
+  description: string;
+  status: FollowUpStatus;
+  dueDate: string | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 interface ApiEnvelope<T> {
@@ -168,4 +185,28 @@ export function uploadFile(file: File, parentId: string | null) {
   body.set("file", file);
   if (parentId) body.set("parentId", parentId);
   return request<ContentItem>("/api/v1/files", { method: "POST", body });
+}
+
+export function getFollowUps() {
+  return request<FollowUp[]>("/api/v1/follow-ups");
+}
+
+export function createFollowUp(input: {
+  title: string;
+  description: string;
+  dueDate: string | null;
+}) {
+  return request<FollowUp>("/api/v1/follow-ups", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+}
+
+export function updateFollowUp(id: string, status: FollowUpStatus) {
+  return request<FollowUp>(`/api/v1/follow-ups/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ status }),
+  });
 }

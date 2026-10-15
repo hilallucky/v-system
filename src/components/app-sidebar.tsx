@@ -6,7 +6,9 @@ import {
   Database,
   FolderClosed,
   FolderOpen,
+  ClipboardList,
   LoaderCircle,
+  Shield,
   Star,
   UsersRound,
   type LucideIcon,
@@ -18,6 +20,7 @@ import { getItems } from "../lib/api";
 import { cn } from "../lib/utils";
 
 export type WorkspaceView = "all" | "recent" | "starred" | "shared";
+export type WorkspacePage = "content" | "follow-ups" | "admin";
 
 const views: { name: string; value: WorkspaceView; icon: LucideIcon }[] = [
   { name: "Contents", value: "all", icon: FolderClosed },
@@ -33,6 +36,8 @@ function formatBytes(bytes: number) {
 
 interface AppSidebarProps {
   view: WorkspaceView;
+  page: WorkspacePage;
+  isAdmin: boolean;
   folderId: string | null;
   folderPathIds: string[];
   rootFolders: ContentItem[];
@@ -40,11 +45,14 @@ interface AppSidebarProps {
   departmentsError?: string;
   onRetryDepartments: () => void;
   onSelectView: (view: WorkspaceView) => void;
+  onSelectPage: (page: WorkspacePage) => void;
   onSelectFolder: (folder: ContentItem) => void;
 }
 
 export function AppSidebar({
   view,
+  page,
+  isAdmin,
   folderId,
   folderPathIds,
   rootFolders,
@@ -52,6 +60,7 @@ export function AppSidebar({
   departmentsError,
   onRetryDepartments,
   onSelectView,
+  onSelectPage,
   onSelectFolder,
 }: AppSidebarProps) {
   const folderPathKey = folderPathIds.join("/");
@@ -64,7 +73,7 @@ export function AppSidebar({
       <nav className="space-y-0.5" aria-label="Workspace">
         {views.map(entry => {
           const Icon = entry.icon;
-          const selected = folderId === null && view === entry.value;
+          const selected = page === "content" && folderId === null && view === entry.value;
           return (
             <button
               key={entry.value}
@@ -79,6 +88,34 @@ export function AppSidebar({
             </button>
           );
         })}
+      </nav>
+      <div className="my-5 h-px bg-border" />
+      <p className="mb-2 px-2.5 text-[9px] font-bold uppercase tracking-[1.1px] text-slate-400">
+        Applications
+      </p>
+      <nav className="space-y-0.5" aria-label="Applications">
+        {isAdmin && (
+          <button
+            type="button"
+            onClick={() => onSelectPage("admin")}
+            className={cn(
+              "flex h-9 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-[11px] text-slate-600 hover:bg-slate-50",
+              page === "admin" && "bg-blue-50 font-semibold text-blue-800 hover:bg-blue-50",
+            )}
+          >
+            <Shield size={15} /> Admin overview
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={() => onSelectPage("follow-ups")}
+          className={cn(
+            "flex h-9 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-[11px] text-slate-600 hover:bg-slate-50",
+            page === "follow-ups" && "bg-blue-50 font-semibold text-blue-800 hover:bg-blue-50",
+          )}
+        >
+          <ClipboardList size={15} /> Playbooks
+        </button>
       </nav>
       <div className="my-5 h-px bg-border" />
       <p className="mb-2 px-2.5 text-[9px] font-bold uppercase tracking-[1.1px] text-slate-400">

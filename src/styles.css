@@ -35,6 +35,12 @@ select {
   font: inherit;
 }
 
+button:not(:disabled),
+a[href],
+[role="menuitem"] {
+  cursor: pointer;
+}
+
 button:disabled {
   cursor: not-allowed;
 }
