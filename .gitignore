@@ -1,0 +1,8 @@
+node_modules/
+dist/
+data/
+*.tsbuildinfo
+.env
+.env.*
+!.env.example
+/connection.ts
