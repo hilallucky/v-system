@@ -37,25 +37,66 @@ export interface UserProfile {
   id: string;
   fullName: string;
   email: string;
-  role: "admin" | "user";
+  role: "admin" | "supervisor" | "user" | "member";
   createdAt: string;
 }
 
-export type FollowUpStatus = "open" | "in_progress" | "resolved";
-
-export interface FollowUp {
-  id: string;
-  createdBy: string;
-  creatorName: string;
-  assignedTo: string | null;
-  assigneeName: string | null;
-  title: string;
-  description: string;
-  status: FollowUpStatus;
-  dueDate: string | null;
-  createdAt: string;
-  updatedAt: string;
+export interface ManagedUser extends UserProfile {
+  isActive: boolean;
 }
+
+export type AppRole = UserProfile["role"];
+export type MenuKey =
+  | "admin-dashboard"
+  | "user-management"
+  | "role-management"
+  | "contents"
+  | "folders"
+  | "recent"
+  | "starred"
+  | "shared"
+  | "follow-up-checklist"
+  | "monthly-target"
+  | "activity-record-plan"
+  | "customer-list"
+  | "prospect-list"
+  | "daily-tasks"
+  | "monthly-side-volume";
+export interface MenuPermissions {
+  menuKey: MenuKey;
+  view: boolean;
+  add: boolean;
+  edit: boolean;
+  delete: boolean;
+}
+export type RolePermissions = { role: AppRole; permissions: MenuPermissions[] };
+
+export interface ContentNotification {
+  id: number;
+  itemId: string;
+  itemName: string;
+  itemKind: "folder" | "file" | "link";
+  parentId: string | null;
+  createdAt: string;
+  readAt: string | null;
+}
+
+export type PlaybookForm =
+  | "follow-up-checklist"
+  | "monthly-target"
+  | "activity-record-plan"
+  | "customer-list"
+  | "prospect-list"
+  | "daily-tasks"
+  | "monthly-side-volume";
+
+export interface PlaybookCatalogs {
+  products: { code: string; name: string; price: number }[];
+  ranks: { code: string; name: string }[];
+  statuses: { id: number; name: string }[];
+}
+
+export type PlaybookRecord = Record<string, unknown> & { id: number };
 
 interface ApiEnvelope<T> {
   data: T;
@@ -145,6 +186,7 @@ export function getItems(params: {
   view: "all" | "recent" | "starred" | "shared";
   search: string;
   sort: "name" | "modified" | "type";
+  kind?: "folder";
 }) {
   const query = new URLSearchParams({
     view: params.view,
@@ -152,6 +194,7 @@ export function getItems(params: {
   });
   if (params.search) query.set("search", params.search);
   if (!params.search) query.set("folderId", params.folderId ?? "root");
+  if (params.kind) query.set("kind", params.kind);
 
   return request<ContentItem[]>(`/api/v1/items?${query.toString()}`);
 }
@@ -187,26 +230,100 @@ export function uploadFile(file: File, parentId: string | null) {
   return request<ContentItem>("/api/v1/files", { method: "POST", body });
 }
 
-export function getFollowUps() {
-  return request<FollowUp[]>("/api/v1/follow-ups");
+export function getPlaybookCatalogs() {
+  return request<PlaybookCatalogs>("/api/v1/playbooks/catalogs");
 }
 
-export function createFollowUp(input: {
-  title: string;
-  description: string;
-  dueDate: string | null;
-}) {
-  return request<FollowUp>("/api/v1/follow-ups", {
+export function getPlaybookRecords(
+  form: PlaybookForm,
+  period?: { month?: number; year?: number },
+) {
+  const query = new URLSearchParams();
+  if (period?.month) query.set("month", String(period.month));
+  if (period?.year) query.set("year", String(period.year));
+  const suffix = query.size ? `?${query.toString()}` : "";
+  return request<PlaybookRecord[]>(`/api/v1/playbooks/${form}${suffix}`);
+}
+
+export function savePlaybookRecord(form: PlaybookForm, input: Record<string, unknown>) {
+  return request<PlaybookRecord>(`/api/v1/playbooks/${form}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
   });
 }
 
-export function updateFollowUp(id: string, status: FollowUpStatus) {
-  return request<FollowUp>(`/api/v1/follow-ups/${encodeURIComponent(id)}`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ status }),
+export function deletePlaybookRecord(form: PlaybookForm, id: number) {
+  return request<{ deleted: boolean }>(`/api/v1/playbooks/${form}/${id}`, {
+    method: "DELETE",
   });
+}
+
+export function getContentNotifications() {
+  return request<{ items: ContentNotification[]; unreadCount: number }>("/api/v1/notifications");
+}
+
+export function markContentNotificationRead(id: number) {
+  return request<{ read: boolean }>(`/api/v1/notifications/${id}/read`, {
+    method: "PATCH",
+  });
+}
+
+export function getContentItem(id: string) {
+  return request<ContentItem>(`/api/v1/items/${encodeURIComponent(id)}`);
+}
+
+export function getManagedUsers() {
+  return request<ManagedUser[]>("/api/v1/admin/users");
+}
+
+export function getCurrentMenuPermissions() {
+  return request<MenuPermissions[]>("/api/v1/permissions/me");
+}
+
+export function getRolePermissions() {
+  return request<RolePermissions[]>("/api/v1/admin/role-permissions");
+}
+
+export function saveRolePermissions(role: Exclude<AppRole, "admin">, permissions: MenuPermissions[]) {
+  return request<MenuPermissions[]>("/api/v1/admin/role-permissions", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ role, permissions }),
+  });
+}
+
+export function createManagedUser(input: {
+  fullName: string;
+  email: string;
+  password: string;
+  role: AppRole;
+}) {
+  return request<ManagedUser>("/api/v1/admin/users", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+}
+
+export function updateManagedUser(
+  id: string,
+  input: { fullName: string; email: string; role: AppRole },
+) {
+  return request<ManagedUser>(`/api/v1/admin/users/${encodeURIComponent(id)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+}
+
+export function setManagedUserActive(id: string, isActive: boolean) {
+  return request<{ id: string; isActive: boolean }>(
+    `/api/v1/admin/users/${encodeURIComponent(id)}/status`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ isActive }),
+    },
+  );
 }

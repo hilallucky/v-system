@@ -4,14 +4,14 @@ import type { ButtonHTMLAttributes } from "react";
 import { cn } from "../../lib/utils";
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50",
+  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#754691] focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50",
   {
     variants: {
       variant: {
-        default: "bg-blue-700 text-white shadow-sm hover:bg-blue-800",
-        secondary: "border border-border bg-white text-slate-600 hover:bg-slate-50",
-        ghost: "text-slate-600 hover:bg-slate-100 hover:text-slate-900",
-        outline: "border border-border bg-white text-slate-700 hover:bg-slate-50",
+        default: "bg-[#4A2260] text-white shadow-sm hover:bg-[#754691]",
+        secondary: "border border-border bg-white text-slate-600 hover:border-[#d9c9e2] hover:bg-[#f5eff8] hover:text-[#754691]",
+        ghost: "text-slate-600 hover:bg-[#f5eff8] hover:text-[#754691]",
+        outline: "border border-border bg-white text-slate-700 hover:border-[#d9c9e2] hover:bg-[#f5eff8] hover:text-[#754691]",
       },
       size: {
         default: "h-9 px-3.5",

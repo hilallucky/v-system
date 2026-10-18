@@ -7,6 +7,7 @@ import { z } from "zod";
 import { database, uploadDirectory } from "../../database.js";
 import { getLinkPreview } from "../../link-preview.js";
 import { ApiError } from "../../types.js";
+import { addContentNotifications } from "../notifications/service.js";
 
 interface ItemRow extends RowDataPacket {
   id: string;
@@ -137,7 +138,9 @@ export async function getItems(input: {
   if (input.view === "starred") clauses.push("bc_items.starred = 1");
   if (input.view === "shared") clauses.push("bc_items.shared = 1");
 
-  const orderBy = {
+  const orderBy = input.view === "recent"
+    ? "bc_items.modified_at DESC, bc_items.id DESC"
+    : {
     name: "CASE WHEN bc_items.kind = 'folder' THEN 0 ELSE 1 END, bc_items.name ASC",
     modified: "CASE WHEN bc_items.kind = 'folder' THEN 0 ELSE 1 END, bc_items.modified_at DESC",
     type: "CASE WHEN bc_items.kind = 'folder' THEN 0 ELSE 1 END, bc_items.mime_type ASC, bc_items.name ASC",
@@ -169,23 +172,35 @@ export async function getFolderPath(folderId: string) {
 export async function addFolder(
   input: { name: string; parentId: string | null },
   owner: string,
+  ownerId: string,
 ) {
   await assertParentFolder(input.parentId);
   await assertUniqueName(input.name, input.parentId);
   const now = new Date().toISOString();
   const id = randomUUID();
   const db = await database;
-  await db.execute(`
-    INSERT INTO bc_items (id, parent_id, name, kind, modified_at, owner, status)
-    VALUES (?, ?, ?, 'folder', ?, ?, 'Ready')
-  `, [id, input.parentId, input.name, now, owner]);
-  const [rows] = await db.execute<ItemRow[]>(`${itemSelect} WHERE bc_items.id = ?`, [id]);
-  return toItem(rows[0]);
+  const connection = await db.getConnection();
+  try {
+    await connection.beginTransaction();
+    await connection.execute(`
+      INSERT INTO bc_items (id, parent_id, name, kind, modified_at, owner, status)
+      VALUES (?, ?, ?, 'folder', ?, ?, 'Ready')
+    `, [id, input.parentId, input.name, now, owner]);
+    await addContentNotifications(connection, { itemId: id, ownerId });
+    const [rows] = await connection.execute<ItemRow[]>(`${itemSelect} WHERE bc_items.id = ?`, [id]);
+    await connection.commit();
+    return toItem(rows[0]);
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
 }
 
 export async function addFile(
   file: Express.Multer.File,
-  input: { parentId: string | null; owner: string },
+  input: { parentId: string | null; owner: string; ownerId: string },
 ) {
   await assertParentFolder(input.parentId);
   const name = basename(file.originalname.replaceAll("\\", "/")).trim();
@@ -194,18 +209,30 @@ export async function addFile(
   const now = new Date().toISOString();
   const id = randomUUID();
   const db = await database;
-  await db.execute(`
-    INSERT INTO bc_items (
-      id, parent_id, name, kind, mime_type, size, modified_at, owner, status, stored_name
-    ) VALUES (?, ?, ?, 'file', ?, ?, ?, ?, 'Ready', ?)
-  `, [id, input.parentId, safeName, file.mimetype, file.size, now, input.owner, file.filename]);
-  const [rows] = await db.execute<ItemRow[]>(`${itemSelect} WHERE bc_items.id = ?`, [id]);
-  return toItem(rows[0]);
+  const connection = await db.getConnection();
+  try {
+    await connection.beginTransaction();
+    await connection.execute(`
+      INSERT INTO bc_items (
+        id, parent_id, name, kind, mime_type, size, modified_at, owner, status, stored_name
+      ) VALUES (?, ?, ?, 'file', ?, ?, ?, ?, 'Ready', ?)
+    `, [id, input.parentId, safeName, file.mimetype, file.size, now, input.owner, file.filename]);
+    await addContentNotifications(connection, { itemId: id, ownerId: input.ownerId });
+    const [rows] = await connection.execute<ItemRow[]>(`${itemSelect} WHERE bc_items.id = ?`, [id]);
+    await connection.commit();
+    return toItem(rows[0]);
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
 }
 
 export async function addLink(
   input: { url: string; name?: string; parentId: string | null },
   owner: string,
+  ownerId: string,
 ) {
   await assertParentFolder(input.parentId);
   const preview = await getLinkPreview(input.url);
@@ -214,31 +241,49 @@ export async function addLink(
   const id = randomUUID();
   const now = new Date().toISOString();
   const db = await database;
-  await db.execute(`
-    INSERT INTO bc_items (
-      id, parent_id, name, kind, mime_type, modified_at, owner, status,
-      url, thumbnail_url, description
-    ) VALUES (?, ?, ?, 'link', 'text/html', ?, ?, 'Ready', ?, ?, ?)
-  `, [
-    id,
-    input.parentId,
-    name,
-    now,
-    owner,
-    preview.url,
-    preview.thumbnailUrl,
-    preview.description,
-  ]);
+  const connection = await db.getConnection();
+  try {
+    await connection.beginTransaction();
+    await connection.execute(`
+      INSERT INTO bc_items (
+        id, parent_id, name, kind, mime_type, modified_at, owner, status,
+        url, thumbnail_url, description
+      ) VALUES (?, ?, ?, 'link', 'text/html', ?, ?, 'Ready', ?, ?, ?)
+    `, [
+      id,
+      input.parentId,
+      name,
+      now,
+      owner,
+      preview.url,
+      preview.thumbnailUrl,
+      preview.description,
+    ]);
+    await addContentNotifications(connection, { itemId: id, ownerId });
+    const [rows] = await connection.execute<ItemRow[]>(`${itemSelect} WHERE bc_items.id = ?`, [id]);
+    await connection.commit();
+    return toItem(rows[0]);
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
+}
+
+export async function getItem(id: string) {
+  const db = await database;
   const [rows] = await db.execute<ItemRow[]>(`${itemSelect} WHERE bc_items.id = ?`, [id]);
+  if (!rows[0]) throw new ApiError(404, "Content item was not found.");
   return toItem(rows[0]);
 }
 
 export async function getFileForDownload(id: string) {
   const db = await database;
   const [rows] = await db.execute<
-    Array<Pick<ItemRow, "id" | "name" | "stored_name" | "mime_type"> & RowDataPacket>
+    Array<Pick<ItemRow, "id" | "name" | "stored_name" | "mime_type" | "starred" | "shared"> & RowDataPacket>
   >(
-    "SELECT id, name, stored_name, mime_type FROM bc_items WHERE id = ? AND kind = 'file'",
+    "SELECT id, name, stored_name, mime_type, starred, shared FROM bc_items WHERE id = ? AND kind = 'file'",
     [id],
   );
   const row = rows[0];
@@ -247,6 +292,17 @@ export async function getFileForDownload(id: string) {
     throw new ApiError(404, "The file content is no longer available.");
   }
   return { ...row, path: join(uploadDirectory, row.stored_name) };
+}
+
+export async function isRecentItem(id: string) {
+  const db = await database;
+  const [rows] = await db.execute<Array<{ id: string } & RowDataPacket>>(
+    `SELECT id FROM bc_items
+     WHERE kind IN ('file', 'link')
+     ORDER BY modified_at DESC, id DESC
+     LIMIT 30`,
+  );
+  return rows.some(row => row.id === id);
 }
 
 export function removeUnrecordedUpload(filename: string) {

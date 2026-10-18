@@ -25,6 +25,7 @@ interface FileListProps {
   search: string;
   isPending: boolean;
   error: Error | null;
+  isAdmin: boolean;
   onRetry: () => void;
   onOpen: (item: ContentItem) => void;
   onDownload: (item: ContentItem) => void;
@@ -183,7 +184,7 @@ function ItemName({
     >
       {itemIcon(item)}
       <span className="min-w-0">
-        <span className="block truncate text-[11px] font-semibold text-slate-700 group-hover:text-blue-700">
+        <span className="block truncate text-[11px] font-semibold text-slate-700 group-hover:text-[#754691]">
           {item.name}
         </span>
         {compact && (
@@ -218,11 +219,11 @@ function ThumbnailItem({
     item.kind === "link" && item.url ? new URL(item.url).hostname.replace(/^www\./i, "") : null;
 
   return (
-    <Card className="group overflow-hidden transition-colors hover:border-blue-200 hover:bg-blue-50/20">
+    <Card className="group overflow-hidden transition-colors hover:border-[#d9c9e2] hover:bg-[#fdfbfe]">
       <button
         type="button"
         onClick={() => onOpen(item)}
-        className="block w-full text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500"
+        className="block w-full text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#754691]"
         title={
           item.kind === "folder"
             ? `Open ${item.name}`
@@ -247,7 +248,7 @@ function ThumbnailItem({
               className={cn(
                 "grid size-16 place-items-center rounded-2xl",
                 item.kind === "folder"
-                  ? "bg-blue-100 text-blue-700"
+                  ? "bg-[#f0e6f5] text-[#4A2260]"
                   : item.kind === "link"
                     ? "bg-violet-100 text-violet-700"
                     : "bg-white text-slate-500 shadow-sm",
@@ -265,7 +266,7 @@ function ThumbnailItem({
         </span>
         <span className="block min-w-0 p-3 pb-1">
           <span className="flex min-w-0 items-center gap-1.5">
-            <span className="block truncate text-[11px] font-semibold text-slate-700 group-hover:text-blue-700">
+            <span className="block truncate text-[11px] font-semibold text-slate-700 group-hover:text-[#754691]">
               {item.name}
             </span>
             {item.kind === "link" && <ExternalLink size={12} className="shrink-0 text-muted" />}
@@ -285,7 +286,7 @@ function ThumbnailItem({
             type="button"
             variant="ghost"
             size="sm"
-            className="h-6 gap-1 rounded-full px-2 text-[9px] text-slate-500 hover:bg-blue-50 hover:text-blue-700"
+            className="h-6 gap-1 rounded-full px-2 text-[9px] text-slate-500 hover:bg-[#f5eff8] hover:text-[#754691]"
             onClick={() => onDownload(item)}
             aria-label={`Download ${item.name}`}
             title={`Download ${item.name}`}
@@ -305,6 +306,7 @@ export function FileList({
   search,
   isPending,
   error,
+  isAdmin,
   onRetry,
   onOpen,
   onDownload,
@@ -345,14 +347,14 @@ export function FileList({
   }
   return (
     <div className="overflow-x-auto">
-      <table className="w-full min-w-[690px] border-collapse text-left">
+      <table className="w-full min-w-[520px] border-collapse text-left">
         <thead className="bg-slate-50/80 text-[10px] font-medium text-slate-400">
           <tr>
             <th className="w-[40%] px-4 py-3">Name</th>
-            <th className="px-3 py-3">Owner</th>
+            {isAdmin && <th className="px-3 py-3">Owner</th>}
             <th className="px-3 py-3">Last modified</th>
             <th className="px-3 py-3">File size</th>
-            <th className="px-3 py-3">Status</th>
+            {isAdmin && <th className="px-3 py-3">Status</th>}
             <th className="w-24 px-3 py-3 text-right">Actions</th>
           </tr>
         </thead>
@@ -360,15 +362,15 @@ export function FileList({
           {items.map(item => (
             <tr
               key={item.id}
-              className="group border-t border-slate-100 text-[10px] text-slate-500 transition-colors hover:bg-slate-50/70"
+              className="group border-t border-slate-100 text-[10px] text-slate-500 transition-colors hover:bg-[#fdfbfe]"
             >
               <td className="px-4 py-2.5">
                 <ItemName item={item} compact={false} onOpen={onOpen} />
               </td>
-              <td className="px-3 py-2.5">{item.owner}</td>
+              {isAdmin && <td className="px-3 py-2.5">{item.owner}</td>}
               <td className="px-3 py-2.5">{formatDate(item.modifiedAt)}</td>
               <td className="px-3 py-2.5">{formatBytes(item.size)}</td>
-              <td className="px-3 py-2.5">
+              {isAdmin && <td className="px-3 py-2.5">
                 {item.kind !== "file" ? (
                   "—"
                 ) : (
@@ -382,14 +384,14 @@ export function FileList({
                     {item.status}
                   </Badge>
                 )}
-              </td>
+              </td>}
               <td className="px-3 py-2.5 text-right">
                 {item.kind === "file" && (
                   <Button
                     type="button"
                     variant="ghost"
                     size="sm"
-                    className="h-6 gap-1 rounded-full px-2 text-[9px] text-slate-500 hover:bg-blue-50 hover:text-blue-700"
+                    className="h-6 gap-1 rounded-full px-2 text-[9px] text-slate-500 hover:bg-[#f5eff8] hover:text-[#754691]"
                     onClick={() => onDownload(item)}
                     aria-label={`Download ${item.name}`}
                     title={`Download ${item.name}`}
