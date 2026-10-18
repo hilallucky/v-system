@@ -13,7 +13,6 @@ export const database = DatabaseConnection.connect();
 async function migrateLegacyTableNames(pool: Pool, includeLegacyIdentityTables: boolean) {
   const mappings = [
     ["items", "bc_items"],
-    ["follow_ups", "bc_follow_ups"],
     ...(includeLegacyIdentityTables
       ? ([["users", "bc_users"], ["sessions", "bc_sessions"]] as const)
       : []),
@@ -114,6 +113,25 @@ export async function runMigrations(pool: Pool) {
       skipRoleTableRename = existingRoleTables.has("user_roles");
     }
 
+    let skipRolePermissionsRename = false;
+    if (filename === "013_global_role_permissions_and_remove_follow_ups.sql") {
+      const [permissionTables] = await pool.execute<Array<{ table_name: string } & RowDataPacket>>(
+        `SELECT table_name FROM information_schema.tables
+         WHERE table_schema = DATABASE()
+           AND table_name IN ('bc_role_menu_permissions', 'role_menu_permissions')`,
+      );
+      const existingPermissionTables = new Set(permissionTables.map(row => row.table_name));
+      if (existingPermissionTables.has("bc_role_menu_permissions") && existingPermissionTables.has("role_menu_permissions")) {
+        throw new Error(
+          'Both "bc_role_menu_permissions" and "role_menu_permissions" exist. Resolve the duplicate settings tables before starting the API.',
+        );
+      }
+      if (!existingPermissionTables.has("bc_role_menu_permissions") && !existingPermissionTables.has("role_menu_permissions")) {
+        throw new Error('Neither "bc_role_menu_permissions" nor "role_menu_permissions" exists; cannot migrate global role permissions.');
+      }
+      skipRolePermissionsRename = existingPermissionTables.has("role_menu_permissions");
+    }
+
     if (filename === identityMigrationName) {
       const [sharedTables] = await pool.execute<Array<{ table_name: string } & RowDataPacket>>(`
         SELECT table_name FROM information_schema.tables
@@ -149,6 +167,9 @@ export async function runMigrations(pool: Pool) {
       await connection.beginTransaction();
       for (const statement of statements) {
         if (skipRoleTableRename && /^RENAME TABLE\s+bc_user_roles\s+TO\s+user_roles\s*$/i.test(statement)) {
+          continue;
+        }
+        if (skipRolePermissionsRename && /^RENAME TABLE\s+bc_role_menu_permissions\s+TO\s+role_menu_permissions\s*$/i.test(statement)) {
           continue;
         }
         await connection.query(statement);

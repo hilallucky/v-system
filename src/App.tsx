@@ -16,7 +16,7 @@ import { WorkspaceStatsCards } from "./components/workspace-stats";
 import { UserProfileDialog } from "./components/user-profile-dialog";
 import { AdminDashboard } from "./features/admin/admin-dashboard";
 import { UserManagementPanel } from "./features/admin/user-management-panel";
-import { FollowUpsPanel } from "./features/follow-ups/follow-ups-panel";
+import { RoleManagementPanel } from "./features/admin/role-management-panel";
 import { PlaybooksPanel } from "./features/playbooks/playbooks-panel";
 import { OfficeDocumentPreview } from "./features/content/office-document-preview";
 import type { OfficePreviewFormat } from "./features/content/office-preview";
@@ -36,6 +36,7 @@ import {
   createFolder,
   createLink,
   getContentItem,
+  getCurrentMenuPermissions,
   getCurrentUser,
   getFolderPath,
   getItems,
@@ -46,6 +47,7 @@ import {
   uploadFile,
   type ContentNotification,
   type ContentItem,
+  type MenuKey,
 } from "./lib/api";
 
 type Layout = "list" | "grid";
@@ -59,6 +61,8 @@ function App() {
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<Sort>("name");
   const [layout, setLayout] = useState<Layout>("list");
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [desktopSidebarVisible, setDesktopSidebarVisible] = useState(true);
   const [folderName, setFolderName] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [linkDialogOpen, setLinkDialogOpen] = useState(false);
@@ -73,6 +77,15 @@ function App() {
     queryFn: getCurrentUser,
     retry: false,
   });
+  const permissionsQuery = useQuery({
+    queryKey: ["menu-permissions", authQuery.data?.role],
+    queryFn: getCurrentMenuPermissions,
+    enabled: Boolean(authQuery.data),
+  });
+  const menuPermissions = permissionsQuery.data ?? [];
+  const canViewMenu = (key: MenuKey) =>
+    authQuery.data?.role === "admin" ||
+    Boolean(menuPermissions.find(permission => permission.menuKey === key)?.view);
   const authMutation = useMutation({
     mutationFn: ({
       mode,
@@ -101,6 +114,7 @@ function App() {
         ["stats"],
         ["folder-path"],
         ["content-notifications"],
+        ["menu-permissions"],
       ]) {
         queryClient.removeQueries({ queryKey });
       }
@@ -115,7 +129,7 @@ function App() {
   }, [searchInput]);
 
   useEffect(() => {
-    setPage(authQuery.data?.role === "admin" ? "admin" : "content");
+    setPage(authQuery.data?.role === "admin" || authQuery.data?.role === "supervisor" ? "admin" : "content");
   }, [authQuery.data?.id, authQuery.data?.role]);
 
   useEffect(
@@ -132,19 +146,27 @@ function App() {
   }
 
   const itemsQuery = useQuery({
-    queryKey: ["items", folderId, view, search, sort],
-    queryFn: () => getItems({ folderId, view, search, sort }),
+    queryKey: ["items", folderId, view, search, sort, canViewMenu("contents")],
+    queryFn: () => getItems({
+      folderId,
+      view,
+      search,
+      sort,
+      kind: view === "all" && !canViewMenu("contents") ? "folder" : undefined,
+    }),
     enabled: Boolean(authQuery.data),
   });
   const rootQuery = useQuery({
     queryKey: ["departments"],
-    queryFn: () => getItems({ folderId: null, view: "all", search: "", sort: "name" }),
-    enabled: Boolean(authQuery.data),
+    queryFn: () => getItems({ folderId: null, view: "all", search: "", sort: "name", kind: "folder" }),
+    enabled: Boolean(authQuery.data) && canViewMenu("folders"),
   });
   const statsQuery = useQuery({
     queryKey: ["stats"],
     queryFn: getStats,
-    enabled: Boolean(authQuery.data),
+    enabled: Boolean(authQuery.data) && (
+      canViewMenu("contents") || canViewMenu("admin-dashboard")
+    ),
   });
   const pathQuery = useQuery({
     queryKey: ["folder-path", folderId],
@@ -180,7 +202,7 @@ function App() {
     : folderId
       ? currentPath.at(-1)?.name ?? "Folder"
       : view === "all"
-        ? "Contents"
+        ? canViewMenu("contents") ? "Contents" : "Folders"
         : view === "recent"
           ? "Recent"
           : view === "starred"
@@ -348,21 +370,27 @@ function App() {
   return (
     <div className="min-h-screen bg-canvas">
       <WorkspaceHeader
-        search={searchInput}
-        onSearchChange={setSearchInput}
         onHelp={() => notify("Search or choose a department to find bank content.")}
         onOpenNotification={notification => void openNotification(notification)}
         user={authQuery.data}
         isLoggingOut={logoutMutation.isPending}
         onProfile={() => setProfileOpen(true)}
         onLogout={() => logoutMutation.mutate()}
+        onToggleMobileSidebar={() => setMobileSidebarOpen(open => !open)}
+        onToggleDesktopSidebar={() => setDesktopSidebarVisible(visible => !visible)}
+        desktopSidebarVisible={desktopSidebarVisible}
+        mobileSidebarOpen={mobileSidebarOpen}
       />
 
       <div className="flex min-h-[calc(100vh-4rem)]">
         <AppSidebar
           view={view}
           page={page}
-          isAdmin={authQuery.data.role === "admin"}
+          role={authQuery.data.role}
+          permissions={menuPermissions}
+          mobileOpen={mobileSidebarOpen}
+          desktopVisible={desktopSidebarVisible}
+          onCloseMobile={() => setMobileSidebarOpen(false)}
           folderId={folderId}
           folderPathIds={currentPath.map(entry => entry.id)}
           rootFolders={rootFolders}
@@ -379,13 +407,33 @@ function App() {
         />
 
         <main className="min-w-0 flex-1 px-4 py-6 sm:px-7 lg:px-9">
-          {isPlaybookPage(page) ? (
-            <PlaybooksPanel key={page} form={page} />
-          ) : page === "follow-ups" ? (
-            <FollowUpsPanel user={authQuery.data} />
-          ) : page === "user-management" && authQuery.data.role === "admin" ? (
-            <UserManagementPanel currentUserId={authQuery.data.id} />
-          ) : page === "admin" && authQuery.data.role === "admin" ? (
+          {permissionsQuery.isError && (
+            <div className="mb-4 flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-[11px] text-red-700" role="alert">
+              <AlertCircle size={15} />
+              Menu permissions could not be loaded: {permissionsQuery.error.message}
+              <Button variant="outline" size="sm" className="ml-auto" onClick={() => void permissionsQuery.refetch()}>
+                Retry
+              </Button>
+            </div>
+          )}
+          {isPlaybookPage(page) && canViewMenu(page) ? (
+            <PlaybooksPanel
+              key={page}
+              form={page}
+              canAdd={Boolean(menuPermissions.find(permission => permission.menuKey === page)?.add)}
+              canEdit={Boolean(menuPermissions.find(permission => permission.menuKey === page)?.edit)}
+              canDelete={Boolean(menuPermissions.find(permission => permission.menuKey === page)?.delete)}
+            />
+          ) : page === "user-management" && canViewMenu("user-management") ? (
+            <UserManagementPanel
+              currentUserId={authQuery.data.id}
+              currentRole={authQuery.data.role}
+              canAdd={Boolean(menuPermissions.find(permission => permission.menuKey === "user-management")?.add)}
+              canEdit={Boolean(menuPermissions.find(permission => permission.menuKey === "user-management")?.edit)}
+            />
+          ) : page === "role-management" && authQuery.data.role === "admin" ? (
+            <RoleManagementPanel />
+          ) : page === "admin" && canViewMenu("admin-dashboard") ? (
             <AdminDashboard
               user={authQuery.data}
               stats={statsQuery.data}
@@ -398,7 +446,7 @@ function App() {
             />
           ) : (
           <div className="mx-auto max-w-[1280px]">
-            <div className="mb-5 flex items-center justify-between gap-3">
+            <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="min-w-0">
                 <div className="mb-1 text-[10px] text-muted">
                   {search
@@ -424,7 +472,17 @@ function App() {
                         : `Your ${pageTitle.toLowerCase()} files, all in one place.`}
                 </p>
               </div>
-              {authQuery.data.role === "admin" && <Dialog
+              <label className="relative flex w-full items-center sm:max-w-[410px]">
+                <Search size={15} className="absolute left-3 text-slate-400" />
+                <Input
+                  value={searchInput}
+                  onChange={event => setSearchInput(event.target.value)}
+                  placeholder="Search files and folders"
+                  className="h-9 border-slate-200 bg-white pl-9"
+                  aria-label="Search files and folders"
+                />
+              </label>
+              {Boolean(menuPermissions.find(permission => permission.menuKey === "folders")?.add) && <Dialog
                 open={dialogOpen}
                 onOpenChange={open => {
                   setDialogOpen(open);
@@ -480,7 +538,7 @@ function App() {
               </Dialog>}
             </div>
 
-            {authQuery.data.role === "admin" && <FileToolbar
+            {Boolean(menuPermissions.find(permission => permission.menuKey === "contents")?.add) && <FileToolbar
               sort={sort}
               layout={layout}
               onSortChange={setSort}
@@ -492,17 +550,6 @@ function App() {
                 setLinkDialogOpen(true);
               }}
             />}
-
-            <label className="relative mb-4 flex items-center sm:hidden">
-              <Search size={15} className="absolute left-3 text-slate-400" />
-              <Input
-                value={searchInput}
-                onChange={event => setSearchInput(event.target.value)}
-                placeholder="Search files and folders"
-                className="pl-9"
-                aria-label="Search files and folders"
-              />
-            </label>
 
             <nav
               className="mb-3 flex min-h-6 items-center gap-1.5 overflow-hidden text-[10px]"
@@ -549,12 +596,12 @@ function App() {
               )}
             </nav>
 
-            {isRoot && (
+            {isRoot && (canViewMenu("contents") || canViewMenu("admin-dashboard")) && (
               <WorkspaceStatsCards
                 stats={statsQuery.data}
                 error={statsQuery.isError ? statsQuery.error.message : undefined}
                 onRetry={() => void statsQuery.refetch()}
-                showNeedsReview={authQuery.data.role === "admin"}
+                showNeedsReview={authQuery.data.role === "admin" || authQuery.data.role === "supervisor"}
               />
             )}
 
@@ -566,7 +613,7 @@ function App() {
               />
               <FileList
                 items={items}
-                isAdmin={authQuery.data.role === "admin"}
+                isAdmin={authQuery.data.role === "admin" || authQuery.data.role === "supervisor"}
                 layout={layout}
                 search={search}
                 isPending={itemsQuery.isPending}

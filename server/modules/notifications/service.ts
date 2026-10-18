@@ -21,7 +21,13 @@ export async function addContentNotifications(
      SELECT users.id, ?
      FROM users
      JOIN user_roles ON user_roles.user_id = users.id
-     WHERE users.is_active = 1 AND users.id <> ? AND user_roles.role = 'user'`,
+     WHERE users.is_active = 1 AND users.id <> ?
+       AND EXISTS (
+         SELECT 1 FROM role_menu_permissions
+         WHERE role_menu_permissions.role = user_roles.role
+           AND role_menu_permissions.menu_key = 'contents'
+           AND role_menu_permissions.can_view = 1
+       )`,
     [input.itemId, input.ownerId],
   );
 }

@@ -4,6 +4,7 @@ import type { Request, Response, NextFunction } from "express";
 import type { RowDataPacket } from "mysql2/promise";
 import { database } from "../../database.js";
 import { ApiError } from "../../types.js";
+import type { AppRole } from "./permissions.js";
 
 const scrypt = promisify(scryptCallback);
 const sessionCookieName = "v_system_session";
@@ -13,7 +14,7 @@ export interface UserProfile {
   id: string;
   fullName: string;
   email: string;
-  role: "admin" | "user";
+  role: AppRole;
   createdAt: string;
 }
 
@@ -21,7 +22,7 @@ interface UserRow extends RowDataPacket {
   id: string;
   full_name: string;
   email: string;
-  role: "admin" | "user";
+  role: AppRole;
   password_hash?: string;
   password_salt?: string;
   created_at: Date | string;
@@ -294,6 +295,7 @@ export async function createManagedUser(input: {
   fullName: string;
   email: string;
   password: string;
+  role: AppRole;
 }) {
   const db = await database;
   const id = randomUUID();
@@ -307,8 +309,8 @@ export async function createManagedUser(input: {
       [id, input.fullName, input.email, passwordHash, salt],
     );
     await connection.execute(
-      "INSERT INTO user_roles (user_id, role) VALUES (?, 'user')",
-      [id],
+      "INSERT INTO user_roles (user_id, role) VALUES (?, ?)",
+      [id, input.role],
     );
     await connection.commit();
   } catch (error) {
@@ -324,27 +326,28 @@ export async function createManagedUser(input: {
     id,
     fullName: input.fullName,
     email: input.email,
-    role: "user" as const,
+    role: input.role,
     createdAt: new Date().toISOString(),
     isActive: true,
   };
 }
 
-export async function setManagedUserActive(id: string, isActive: boolean, adminId: string) {
-  if (id === adminId && !isActive) {
-    throw new ApiError(400, "You cannot disable your own administrator account.");
+export async function updateManagedUser(
+  id: string,
+  input: { fullName: string; email: string; role: AppRole },
+  actor: { id: string; role: AppRole },
+) {
+  if (id === actor.id && input.role !== actor.role) {
+    throw new ApiError(400, "You cannot change your own account role.");
+  }
+  if (actor.role === "supervisor" && !["user", "member"].includes(input.role)) {
+    throw new ApiError(403, "Supervisors can only assign User or Member roles.");
   }
   const db = await database;
   const connection = await db.getConnection();
   try {
     await connection.beginTransaction();
-    const [adminRows] = await connection.execute<Array<RowDataPacket & { id: string }>>(
-      `SELECT users.id FROM users
-       JOIN user_roles ON user_roles.user_id = users.id
-       WHERE users.is_active = 1 AND user_roles.role = 'admin'
-       FOR UPDATE`,
-    );
-    const [userRows] = await connection.execute<Array<RowDataPacket & { id: string; role: string }>>(
+    const [userRows] = await connection.execute<Array<RowDataPacket & { id: string; role: AppRole }>>(
       `SELECT users.id, user_roles.role FROM users
        JOIN user_roles ON user_roles.user_id = users.id
        WHERE users.id = ? FOR UPDATE`,
@@ -352,8 +355,74 @@ export async function setManagedUserActive(id: string, isActive: boolean, adminI
     );
     const target = userRows[0];
     if (!target) throw new ApiError(404, "User was not found.");
-    if (!isActive && target.role === "admin" && adminRows.length <= 1) {
-      throw new ApiError(400, "The last active administrator cannot be disabled.");
+    if (actor.role === "supervisor" && !["user", "member"].includes(target.role)) {
+      throw new ApiError(403, "Supervisors can only edit User and Member accounts.");
+    }
+    await connection.execute(
+      "UPDATE users SET full_name = ?, email = ? WHERE id = ?",
+      [input.fullName, input.email, id],
+    );
+    if (target.role !== input.role) {
+      if (target.role === "admin" || input.role === "admin") {
+        const [adminRows] = await connection.execute<Array<RowDataPacket & { id: string }>>(
+          `SELECT users.id FROM users
+           JOIN user_roles ON user_roles.user_id = users.id
+           WHERE users.is_active = 1 AND user_roles.role = 'admin'
+           FOR UPDATE`,
+        );
+        if (adminRows.length <= 1) {
+          throw new ApiError(400, "The last active administrator cannot be demoted.");
+        }
+      }
+      await connection.execute("UPDATE user_roles SET role = ? WHERE user_id = ?", [input.role, id]);
+      await connection.execute("DELETE FROM sessions WHERE user_id = ?", [id]);
+    }
+    await connection.commit();
+  } catch (error) {
+    await connection.rollback();
+    if (isDuplicateEntry(error)) {
+      throw new ApiError(409, "An account with that email already exists.");
+    }
+    throw error;
+  } finally {
+    connection.release();
+  }
+  return { id, ...input };
+}
+
+export async function setManagedUserActive(
+  id: string,
+  isActive: boolean,
+  actor: { id: string; role: AppRole },
+) {
+  if (id === actor.id && !isActive) {
+    throw new ApiError(400, "You cannot disable your own account.");
+  }
+  const db = await database;
+  const connection = await db.getConnection();
+  try {
+    await connection.beginTransaction();
+    const [targetRows] = await connection.execute<Array<RowDataPacket & { id: string; role: AppRole }>>(
+      `SELECT users.id, user_roles.role FROM users
+       JOIN user_roles ON user_roles.user_id = users.id
+       WHERE users.id = ? FOR UPDATE`,
+      [id],
+    );
+    const target = targetRows[0];
+    if (!target) throw new ApiError(404, "User was not found.");
+    if (actor.role === "supervisor" && !["user", "member"].includes(target.role)) {
+      throw new ApiError(403, "Supervisors can only manage access for User and Member accounts.");
+    }
+    if (!isActive && target.role === "admin") {
+      const [adminRows] = await connection.execute<Array<RowDataPacket & { id: string }>>(
+        `SELECT users.id FROM users
+         JOIN user_roles ON user_roles.user_id = users.id
+         WHERE users.is_active = 1 AND user_roles.role = 'admin'
+         FOR UPDATE`,
+      );
+      if (adminRows.length <= 1) {
+        throw new ApiError(400, "The last active administrator cannot be disabled.");
+      }
     }
     await connection.execute("UPDATE users SET is_active = ? WHERE id = ?", [isActive, id]);
     if (!isActive) await connection.execute("DELETE FROM sessions WHERE user_id = ?", [id]);

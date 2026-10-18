@@ -1,5 +1,15 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertCircle, Bell, CircleHelp, LoaderCircle, LogOut, Search, UserRound } from "lucide-react";
+import {
+  AlertCircle,
+  Bell,
+  CircleHelp,
+  LoaderCircle,
+  LogOut,
+  Menu,
+  PanelLeftClose,
+  PanelLeftOpen,
+  UserRound,
+} from "lucide-react";
 import { useState } from "react";
 import {
   getContentNotifications,
@@ -8,28 +18,31 @@ import {
   type UserProfile,
 } from "../lib/api";
 import { Button } from "./ui/button";
-import { Input } from "./ui/input";
 
 interface WorkspaceHeaderProps {
-  search: string;
-  onSearchChange: (value: string) => void;
   onHelp: () => void;
   onOpenNotification: (notification: ContentNotification) => void;
   user: UserProfile;
   isLoggingOut: boolean;
   onProfile: () => void;
   onLogout: () => void;
+  onToggleMobileSidebar: () => void;
+  onToggleDesktopSidebar: () => void;
+  desktopSidebarVisible: boolean;
+  mobileSidebarOpen: boolean;
 }
 
 export function WorkspaceHeader({
-  search,
-  onSearchChange,
   onHelp,
   onOpenNotification,
   user,
   isLoggingOut,
   onProfile,
   onLogout,
+  onToggleMobileSidebar,
+  onToggleDesktopSidebar,
+  desktopSidebarVisible,
+  mobileSidebarOpen,
 }: WorkspaceHeaderProps) {
   const queryClient = useQueryClient();
   const [notificationsOpen, setNotificationsOpen] = useState(false);
@@ -45,27 +58,38 @@ export function WorkspaceHeader({
   const unreadCount = notificationsQuery.data?.unreadCount ?? 0;
 
   return (
-    <header className="sticky top-0 z-20 flex h-16 items-center border-b border-border bg-white px-5 sm:px-7">
-      <a href="/" className="flex min-w-52 items-center gap-2.5 no-underline">
+    <header className="sticky top-0 z-50 flex h-16 items-center border-b border-border bg-white px-2 sm:px-7">
+      <Button
+        variant="ghost"
+        size="icon"
+        className="mr-1 shrink-0 lg:hidden"
+        aria-label={mobileSidebarOpen ? "Close navigation menu" : "Open navigation menu"}
+        aria-expanded={mobileSidebarOpen}
+        title={mobileSidebarOpen ? "Close navigation" : "Open navigation"}
+        onClick={onToggleMobileSidebar}
+      >
+        <Menu size={19} />
+      </Button>
+      <Button
+        variant="ghost"
+        size="icon"
+        className="mr-2 hidden shrink-0 lg:inline-flex"
+        aria-label={desktopSidebarVisible ? "Hide sidebar" : "Show sidebar"}
+        title={desktopSidebarVisible ? "Hide sidebar" : "Show sidebar"}
+        onClick={onToggleDesktopSidebar}
+      >
+        {desktopSidebarVisible ? <PanelLeftClose size={17} /> : <PanelLeftOpen size={17} />}
+      </Button>
+      <a href="/" className="flex min-w-0 shrink items-center gap-2.5 no-underline sm:min-w-52">
         <img
           src="/eskayvie-logo.png"
           alt="Eskayvie"
-          className="h-9 w-[154px] object-contain object-left"
+          className="h-8 w-32 object-contain object-left sm:h-9 sm:w-[154px]"
         />
         <span className="hidden text-[10px] text-muted xl:inline">Bank Content</span>
       </a>
-      <label className="relative ml-6 hidden w-full max-w-[410px] items-center sm:flex">
-        <Search size={15} className="absolute left-3 text-slate-400" />
-        <Input
-          value={search}
-          onChange={event => onSearchChange(event.target.value)}
-          placeholder="Search files and folders"
-          className="h-9 border-slate-200 bg-slate-50 pl-9"
-          aria-label="Search files and folders"
-        />
-      </label>
       <div className="ml-auto flex items-center gap-1">
-        <Button variant="ghost" size="icon" aria-label="Help" title="Help" onClick={onHelp}>
+        <Button variant="ghost" size="icon" className="hidden sm:inline-flex" aria-label="Help" title="Help" onClick={onHelp}>
           <CircleHelp size={17} />
         </Button>
         <div className="relative">

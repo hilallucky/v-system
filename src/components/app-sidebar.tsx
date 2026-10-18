@@ -9,6 +9,7 @@ import {
   FileText,
   FolderTree,
   LoaderCircle,
+  X,
   Shield,
   Star,
   UsersRound,
@@ -16,7 +17,7 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import type { ContentItem, WorkspaceStats } from "../lib/api";
+import type { AppRole, ContentItem, MenuKey, MenuPermissions, WorkspaceStats } from "../lib/api";
 import { getItems } from "../lib/api";
 import { cn } from "../lib/utils";
 
@@ -29,7 +30,7 @@ export type PlaybookPage =
   | "prospect-list"
   | "daily-tasks"
   | "monthly-side-volume";
-export type WorkspacePage = "content" | "follow-ups" | "admin" | "user-management" | PlaybookPage;
+export type WorkspacePage = "content" | "admin" | "user-management" | "role-management" | PlaybookPage;
 
 const playbookPages: { name: string; value: PlaybookPage }[] = [
   { name: "Follow Up Checklist", value: "follow-up-checklist" },
@@ -62,7 +63,11 @@ function formatBytes(bytes: number) {
 interface AppSidebarProps {
   view: WorkspaceView;
   page: WorkspacePage;
-  isAdmin: boolean;
+  role: AppRole;
+  permissions: MenuPermissions[];
+  mobileOpen: boolean;
+  desktopVisible: boolean;
+  onCloseMobile: () => void;
   folderId: string | null;
   folderPathIds: string[];
   rootFolders: ContentItem[];
@@ -77,7 +82,11 @@ interface AppSidebarProps {
 export function AppSidebar({
   view,
   page,
-  isAdmin,
+  role,
+  permissions,
+  mobileOpen,
+  desktopVisible,
+  onCloseMobile,
   folderId,
   folderPathIds,
   rootFolders,
@@ -88,16 +97,36 @@ export function AppSidebar({
   onSelectPage,
   onSelectFolder,
 }: AppSidebarProps) {
+  const canView = (menuKey: MenuKey) =>
+    role === "admin" || Boolean(permissions.find(permission => permission.menuKey === menuKey)?.view);
+  const hasAdministratorMenu = canView("admin-dashboard") || canView("user-management") ||
+    role === "admin" && canView("role-management");
+  const hasPlaybookMenu = playbookPages.some(entry => canView(entry.value));
+  const hasBankContentMenu = ["contents", "folders", "recent", "starred", "shared"].some(key =>
+    canView(key as MenuKey),
+  );
+  const selectView = (nextView: WorkspaceView) => {
+    onSelectView(nextView);
+    onCloseMobile();
+  };
+  const selectPage = (nextPage: WorkspacePage) => {
+    onSelectPage(nextPage);
+    onCloseMobile();
+  };
+  const selectFolder = (folder: ContentItem) => {
+    onSelectFolder(folder);
+    onCloseMobile();
+  };
   const folderPathKey = folderPathIds.join("/");
   const [administratorExpanded, setAdministratorExpanded] = useState(
-    page === "admin" || page === "user-management",
+    page === "admin" || page === "user-management" || page === "role-management",
   );
   const [playbooksExpanded, setPlaybooksExpanded] = useState(isPlaybookPage(page));
   const [bankContentExpanded, setBankContentExpanded] = useState(page === "content");
   const [foldersExpanded, setFoldersExpanded] = useState(folderId !== null);
 
   useEffect(() => {
-    if (page === "admin" || page === "user-management") setAdministratorExpanded(true);
+    if (page === "admin" || page === "user-management" || page === "role-management") setAdministratorExpanded(true);
     if (isPlaybookPage(page)) setPlaybooksExpanded(true);
     if (page === "content") setBankContentExpanded(true);
   }, [page]);
@@ -105,6 +134,15 @@ export function AppSidebar({
   useEffect(() => {
     if (folderId) setFoldersExpanded(true);
   }, [folderId]);
+
+  useEffect(() => {
+    if (!mobileOpen) return;
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") onCloseMobile();
+    }
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [mobileOpen, onCloseMobile]);
 
   function groupButton(
     label: string,
@@ -130,52 +168,62 @@ export function AppSidebar({
     );
   }
 
-  return (
-    <aside className="hidden w-[232px] shrink-0 flex-col overflow-y-auto border-r border-border bg-white px-3 py-6 md:flex">
+  const sidebarContent = (
+    <>
       <nav className="space-y-0.5" aria-label="Applications">
-        {isAdmin && (
+        {hasAdministratorMenu && (
           <>
             {groupButton(
               "Administrator",
               Shield,
               administratorExpanded,
               () => setAdministratorExpanded(value => !value),
-              page === "admin" || page === "user-management",
+              page === "admin" || page === "user-management" || page === "role-management",
             )}
             {administratorExpanded && (
               <div className="ml-3 border-l border-border pl-2">
-                <button
+                {canView("admin-dashboard") && <button
                   type="button"
-                  onClick={() => onSelectPage("admin")}
+                  onClick={() => selectPage("admin")}
                   className={cn(
                     "flex min-h-8 w-full items-center rounded-md px-2.5 py-1.5 text-left text-[10px] text-slate-600 transition-colors hover:bg-[#f5eff8] hover:text-[#754691]",
                     page === "admin" && "bg-[#f5eff8] font-semibold text-[#4A2260]",
                   )}
                 >
                   Admin overview
-                </button>
-                <button
+                </button>}
+                {canView("user-management") && <button
                   type="button"
-                  onClick={() => onSelectPage("user-management")}
+                  onClick={() => selectPage("user-management")}
                   className={cn(
                     "flex min-h-8 w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-[10px] text-slate-600 transition-colors hover:bg-[#f5eff8] hover:text-[#754691]",
                     page === "user-management" && "bg-[#f5eff8] font-semibold text-[#4A2260]",
                   )}
                 >
                   <UsersRound size={13} /> User Management
-                </button>
+                </button>}
+                {role === "admin" && canView("role-management") && <button
+                  type="button"
+                  onClick={() => selectPage("role-management")}
+                  className={cn(
+                    "flex min-h-8 w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-[10px] text-slate-600 transition-colors hover:bg-[#f5eff8] hover:text-[#754691]",
+                    page === "role-management" && "bg-[#f5eff8] font-semibold text-[#4A2260]",
+                  )}
+                >
+                  Role Management
+                </button>}
               </div>
             )}
           </>
         )}
-        {groupButton("Playbooks", FileText, playbooksExpanded, () => setPlaybooksExpanded(value => !value), isPlaybookPage(page))}
-        {playbooksExpanded && (
+        {hasPlaybookMenu && groupButton("Playbooks", FileText, playbooksExpanded, () => setPlaybooksExpanded(value => !value), isPlaybookPage(page))}
+        {hasPlaybookMenu && playbooksExpanded && (
           <div className="ml-3 border-l border-border pl-2">
-            {playbookPages.map(entry => (
+            {playbookPages.filter(entry => canView(entry.value)).map(entry => (
               <button
                 key={entry.value}
                 type="button"
-                onClick={() => onSelectPage(entry.value)}
+                onClick={() => selectPage(entry.value)}
                 className={cn(
                   "flex min-h-8 w-full items-center rounded-md px-2.5 py-1.5 text-left text-[10px] text-slate-600 transition-colors hover:bg-[#f5eff8] hover:text-[#754691]",
                   page === entry.value && "bg-[#f5eff8] font-semibold text-[#4A2260]",
@@ -186,23 +234,23 @@ export function AppSidebar({
             ))}
           </div>
         )}
-        {groupButton(
+        {hasBankContentMenu && groupButton(
           "Bank Content",
           Database,
           bankContentExpanded,
           () => setBankContentExpanded(value => !value),
           page === "content",
         )}
-        {bankContentExpanded && (
+        {hasBankContentMenu && bankContentExpanded && (
           <div className="ml-3 border-l border-border pl-2">
-            {bankViews.filter(entry => entry.value === "all").map(entry => {
+            {bankViews.filter(entry => entry.value === "all" && canView("contents")).map(entry => {
               const Icon = entry.icon;
               const selected = page === "content" && folderId === null && view === entry.value;
               return (
                 <button
                   key={entry.value}
                   type="button"
-                  onClick={() => onSelectView(entry.value)}
+                  onClick={() => selectView(entry.value)}
                   className={cn(
                     "flex min-h-8 w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-[10px] text-slate-600 transition-colors hover:bg-[#f5eff8] hover:text-[#754691]",
                     selected && "bg-[#f5eff8] font-semibold text-[#4A2260]",
@@ -212,7 +260,7 @@ export function AppSidebar({
                 </button>
               );
             })}
-            <button
+            {canView("folders") && <button
               type="button"
               aria-expanded={foldersExpanded}
               onClick={() => setFoldersExpanded(value => !value)}
@@ -223,8 +271,8 @@ export function AppSidebar({
             >
               {foldersExpanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
               <FolderTree size={13} /> Folders
-            </button>
-            {foldersExpanded && (
+            </button>}
+            {canView("folders") && foldersExpanded && (
               <nav className="space-y-0.5" aria-label="Folders" role="tree">
                 {rootFolders.map(folder => (
                   <FolderTreeNode
@@ -233,7 +281,7 @@ export function AppSidebar({
                     depth={0}
                     folderId={folderId}
                     folderPathKey={folderPathKey}
-                    onSelectFolder={onSelectFolder}
+                    onSelectFolder={selectFolder}
                   />
                 ))}
                 {!rootFolders.length && !departmentsError && (
@@ -241,14 +289,14 @@ export function AppSidebar({
                 )}
               </nav>
             )}
-            {bankViews.filter(entry => entry.value === "recent").map(entry => {
+            {bankViews.filter(entry => entry.value === "recent" && canView("recent")).map(entry => {
               const Icon = entry.icon;
               const selected = page === "content" && folderId === null && view === entry.value;
               return (
                 <button
                   key={entry.value}
                   type="button"
-                  onClick={() => onSelectView(entry.value)}
+                  onClick={() => selectView(entry.value)}
                   className={cn(
                     "flex min-h-8 w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-[10px] text-slate-600 transition-colors hover:bg-[#f5eff8] hover:text-[#754691]",
                     selected && "bg-[#f5eff8] font-semibold text-[#4A2260]",
@@ -258,14 +306,14 @@ export function AppSidebar({
                 </button>
               );
             })}
-            {personalViews.map(entry => {
+            {personalViews.filter(entry => canView(entry.value === "starred" ? "starred" : "shared")).map(entry => {
               const Icon = entry.icon;
               const selected = page === "content" && folderId === null && view === entry.value;
               return (
                 <button
                   key={entry.value}
                   type="button"
-                  onClick={() => onSelectView(entry.value)}
+                  onClick={() => selectView(entry.value)}
                   className={cn(
                     "flex min-h-8 w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-[10px] text-slate-600 transition-colors hover:bg-[#f5eff8] hover:text-[#754691]",
                     selected && "bg-[#f5eff8] font-semibold text-[#4A2260]",
@@ -286,7 +334,7 @@ export function AppSidebar({
           </div>
         )}
       </nav>
-      {isAdmin && <div className="mt-auto px-2.5 pt-6">
+      {(role === "admin" || role === "supervisor") && <div className="mt-auto px-2.5 pt-6">
         <div className="mb-2 flex items-center gap-2 text-[11px] font-semibold text-slate-700">
           <Database size={15} className="text-slate-500" /> Storage
         </div>
@@ -312,7 +360,42 @@ export function AppSidebar({
         </div>
       </div>
       }
-    </aside>
+    </>
+  );
+
+  return (
+    <>
+      {mobileOpen && (
+        <div className="fixed inset-0 top-16 z-40 lg:hidden">
+          <button
+            type="button"
+            aria-label="Close navigation"
+            className="absolute inset-0 size-full cursor-default bg-slate-950/35"
+            onClick={onCloseMobile}
+          />
+          <aside className="absolute inset-y-0 left-0 flex w-[min(84vw,320px)] flex-col overflow-y-auto border-r border-border bg-white px-3 py-4 shadow-xl">
+            <div className="mb-3 flex items-center justify-between border-b border-border px-2 pb-3">
+              <span className="text-xs font-semibold text-slate-800">Navigation</span>
+              <button
+                type="button"
+                className="grid size-8 place-items-center rounded-md text-slate-500 hover:bg-[#f5eff8] hover:text-[#4A2260]"
+                aria-label="Close navigation"
+                onClick={onCloseMobile}
+              >
+                <X size={17} />
+              </button>
+            </div>
+            {sidebarContent}
+          </aside>
+        </div>
+      )}
+      <aside className={cn(
+        "hidden w-[232px] shrink-0 flex-col overflow-y-auto border-r border-border bg-white px-3 py-6",
+        desktopVisible ? "lg:flex" : "lg:hidden",
+      )}>
+        {sidebarContent}
+      </aside>
+    </>
   );
 }
 

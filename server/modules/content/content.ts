@@ -138,7 +138,9 @@ export async function getItems(input: {
   if (input.view === "starred") clauses.push("bc_items.starred = 1");
   if (input.view === "shared") clauses.push("bc_items.shared = 1");
 
-  const orderBy = {
+  const orderBy = input.view === "recent"
+    ? "bc_items.modified_at DESC, bc_items.id DESC"
+    : {
     name: "CASE WHEN bc_items.kind = 'folder' THEN 0 ELSE 1 END, bc_items.name ASC",
     modified: "CASE WHEN bc_items.kind = 'folder' THEN 0 ELSE 1 END, bc_items.modified_at DESC",
     type: "CASE WHEN bc_items.kind = 'folder' THEN 0 ELSE 1 END, bc_items.mime_type ASC, bc_items.name ASC",
@@ -279,9 +281,9 @@ export async function getItem(id: string) {
 export async function getFileForDownload(id: string) {
   const db = await database;
   const [rows] = await db.execute<
-    Array<Pick<ItemRow, "id" | "name" | "stored_name" | "mime_type"> & RowDataPacket>
+    Array<Pick<ItemRow, "id" | "name" | "stored_name" | "mime_type" | "starred" | "shared"> & RowDataPacket>
   >(
-    "SELECT id, name, stored_name, mime_type FROM bc_items WHERE id = ? AND kind = 'file'",
+    "SELECT id, name, stored_name, mime_type, starred, shared FROM bc_items WHERE id = ? AND kind = 'file'",
     [id],
   );
   const row = rows[0];
@@ -290,6 +292,17 @@ export async function getFileForDownload(id: string) {
     throw new ApiError(404, "The file content is no longer available.");
   }
   return { ...row, path: join(uploadDirectory, row.stored_name) };
+}
+
+export async function isRecentItem(id: string) {
+  const db = await database;
+  const [rows] = await db.execute<Array<{ id: string } & RowDataPacket>>(
+    `SELECT id FROM bc_items
+     WHERE kind IN ('file', 'link')
+     ORDER BY modified_at DESC, id DESC
+     LIMIT 30`,
+  );
+  return rows.some(row => row.id === id);
 }
 
 export function removeUnrecordedUpload(filename: string) {

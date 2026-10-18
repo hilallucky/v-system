@@ -37,13 +37,39 @@ export interface UserProfile {
   id: string;
   fullName: string;
   email: string;
-  role: "admin" | "user";
+  role: "admin" | "supervisor" | "user" | "member";
   createdAt: string;
 }
 
 export interface ManagedUser extends UserProfile {
   isActive: boolean;
 }
+
+export type AppRole = UserProfile["role"];
+export type MenuKey =
+  | "admin-dashboard"
+  | "user-management"
+  | "role-management"
+  | "contents"
+  | "folders"
+  | "recent"
+  | "starred"
+  | "shared"
+  | "follow-up-checklist"
+  | "monthly-target"
+  | "activity-record-plan"
+  | "customer-list"
+  | "prospect-list"
+  | "daily-tasks"
+  | "monthly-side-volume";
+export interface MenuPermissions {
+  menuKey: MenuKey;
+  view: boolean;
+  add: boolean;
+  edit: boolean;
+  delete: boolean;
+}
+export type RolePermissions = { role: AppRole; permissions: MenuPermissions[] };
 
 export interface ContentNotification {
   id: number;
@@ -53,22 +79,6 @@ export interface ContentNotification {
   parentId: string | null;
   createdAt: string;
   readAt: string | null;
-}
-
-export type FollowUpStatus = "open" | "in_progress" | "resolved";
-
-export interface FollowUp {
-  id: string;
-  createdBy: string;
-  creatorName: string;
-  assignedTo: string | null;
-  assigneeName: string | null;
-  title: string;
-  description: string;
-  status: FollowUpStatus;
-  dueDate: string | null;
-  createdAt: string;
-  updatedAt: string;
 }
 
 export type PlaybookForm =
@@ -176,6 +186,7 @@ export function getItems(params: {
   view: "all" | "recent" | "starred" | "shared";
   search: string;
   sort: "name" | "modified" | "type";
+  kind?: "folder";
 }) {
   const query = new URLSearchParams({
     view: params.view,
@@ -183,6 +194,7 @@ export function getItems(params: {
   });
   if (params.search) query.set("search", params.search);
   if (!params.search) query.set("folderId", params.folderId ?? "root");
+  if (params.kind) query.set("kind", params.kind);
 
   return request<ContentItem[]>(`/api/v1/items?${query.toString()}`);
 }
@@ -218,36 +230,19 @@ export function uploadFile(file: File, parentId: string | null) {
   return request<ContentItem>("/api/v1/files", { method: "POST", body });
 }
 
-export function getFollowUps() {
-  return request<FollowUp[]>("/api/v1/follow-ups");
-}
-
-export function createFollowUp(input: {
-  title: string;
-  description: string;
-  dueDate: string | null;
-}) {
-  return request<FollowUp>("/api/v1/follow-ups", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(input),
-  });
-}
-
-export function updateFollowUp(id: string, status: FollowUpStatus) {
-  return request<FollowUp>(`/api/v1/follow-ups/${encodeURIComponent(id)}`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ status }),
-  });
-}
-
 export function getPlaybookCatalogs() {
   return request<PlaybookCatalogs>("/api/v1/playbooks/catalogs");
 }
 
-export function getPlaybookRecords(form: PlaybookForm) {
-  return request<PlaybookRecord[]>(`/api/v1/playbooks/${form}`);
+export function getPlaybookRecords(
+  form: PlaybookForm,
+  period?: { month?: number; year?: number },
+) {
+  const query = new URLSearchParams();
+  if (period?.month) query.set("month", String(period.month));
+  if (period?.year) query.set("year", String(period.year));
+  const suffix = query.size ? `?${query.toString()}` : "";
+  return request<PlaybookRecord[]>(`/api/v1/playbooks/${form}${suffix}`);
 }
 
 export function savePlaybookRecord(form: PlaybookForm, input: Record<string, unknown>) {
@@ -282,9 +277,41 @@ export function getManagedUsers() {
   return request<ManagedUser[]>("/api/v1/admin/users");
 }
 
-export function createManagedUser(input: { fullName: string; email: string; password: string }) {
+export function getCurrentMenuPermissions() {
+  return request<MenuPermissions[]>("/api/v1/permissions/me");
+}
+
+export function getRolePermissions() {
+  return request<RolePermissions[]>("/api/v1/admin/role-permissions");
+}
+
+export function saveRolePermissions(role: Exclude<AppRole, "admin">, permissions: MenuPermissions[]) {
+  return request<MenuPermissions[]>("/api/v1/admin/role-permissions", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ role, permissions }),
+  });
+}
+
+export function createManagedUser(input: {
+  fullName: string;
+  email: string;
+  password: string;
+  role: AppRole;
+}) {
   return request<ManagedUser>("/api/v1/admin/users", {
     method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+}
+
+export function updateManagedUser(
+  id: string,
+  input: { fullName: string; email: string; role: AppRole },
+) {
+  return request<ManagedUser>(`/api/v1/admin/users/${encodeURIComponent(id)}`, {
+    method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
   });

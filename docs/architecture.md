@@ -13,8 +13,7 @@ src/
   App.tsx
   components/              Shared workspace UI and atomic controls
   features/
-    admin/                 Administrator landing, dashboard and user management
-    follow-ups/            User and administrator follow-up workflow
+    admin/                 Administrator landing, dashboard, user and role management
     playbooks/             Seven user-owned Playbook forms
   lib/api.ts               Typed REST client and shared API models
   styles.css
@@ -28,9 +27,8 @@ server/
     connection.ts          MySQL connection pool
     migrations/            Ordered schema migrations
   modules/
-    auth/                  Authentication and session use cases
+    auth/                  Authentication, sessions and menu permission policy
     content/               File/folder/link use cases
-    follow-ups/            Follow-up API use cases
     playbooks/             Validated, user-scoped form APIs and persistence
   database.ts              Migration runner and database lifecycle
   index.ts                 Server composition root
@@ -50,7 +48,6 @@ src/
     admin/                 Admin landing page, content management, settings
     auth/                  Sign-in, sign-up and session UI
     content/               Browse, preview and download bank content
-    follow-ups/            Follow-up lists, detail and status forms
     playbooks/             Checklist, targets, activity, customer and prospect forms
     user/                  User landing page and personal navigation
   lib/                     Shared API client, utilities and query setup
@@ -61,7 +58,6 @@ server/
     admin/                 Admin authorization and management use cases
     auth/
     content/
-    follow-ups/            Follow-up policy, validation and persistence
     notifications/         Persistent notifications for newly added bank content
     user/                  User-facing dashboard/query use cases
   infrastructure/
@@ -72,10 +68,14 @@ server/
 ```
 
 Do not let route handlers contain persistence logic or let React components
-call `fetch` directly. Keep authorization in server middleware/use cases:
-admin content writes and settings must be privileged, while user content access
-is read/download only. Each API endpoint should validate input and return the
-shared `{ data }` or `{ error }` envelope.
+call `fetch` directly. Keep authorization in server middleware/use cases.
+Menu permissions are stored in the global `role_menu_permissions` table and checked by API
+routes as well as used to render navigation and actions. Administrators have
+unrestricted access; Role Management is Administrator-only. Supervisors can
+manage User and Member accounts but not Administrators or other Supervisors.
+Users are view-only, and Members can view Bank Content and add/edit (not
+delete) their own Playbook records. Each API endpoint should validate input and
+return the shared `{ data }` or `{ error }` envelope.
 
 ## Runtime configuration and current limitations
 
@@ -86,20 +86,24 @@ local disk. `DB_TYPE` currently accepts only `mysql`; `FILE_STORAGE_PROVIDER` cu
 accepts only `local`. PostgreSQL/SQLite drivers, RabbitMQ/Redis queue adapters,
 SMTP delivery, and connection settings for those providers are not yet
 implemented. Admin/user
-roles, follow-up workflows, and user-owned Playbook forms are implemented on
-the current MySQL adapter. Playbook form data uses `pb_` tables and the shared
-user identity; old dump credentials and records are not implicitly assigned to
-current users.
+roles, global role/menu permissions, and user-owned Playbook forms are implemented on
+the current MySQL adapter. Playbooks use API-backed rank, status, and active-product catalogs;
+period-based forms persist inline edits to header/detail tables, and customer product selections
+are stored separately from customer records. Follow Up and Customer records have independent
+Active/Inactive states, while workflow statuses remain catalog-driven. Playbook form data uses
+`pb_` tables and the shared user identity; old dump credentials and records are not implicitly
+assigned to current users. Each Playbook table can export CSV through a permission-checked,
+keyset-paginated server stream, avoiding full-dataset buffering in browser memory.
 Add further providers behind the infrastructure/module boundaries above rather
 than making the UI or route handlers provider-aware.
 
 The default database is `v_system`. Table names are scoped by application:
-`bc_` for bank content, `pb_` for playbooks, and `others_` for shared/system
-tables. User accounts and sessions are shared in `users` and `sessions`, with
-the migration ledger in `schema_migrations`. Bank-content authorization roles
-are stored in `user_roles`, so an administrator in one application does not
-automatically gain privileges in another. Startup migrates existing table names
-and moves current bank-content roles while preserving user accounts and sessions. It
+`bc_` for bank content and `pb_` for playbooks. User accounts and sessions are
+shared in `users` and `sessions`, with the migration ledger in
+`schema_migrations`. Shared role assignments are
+stored in `user_roles`, with role/menu permissions in
+`role_menu_permissions`. Startup migrates existing table names
+while preserving user accounts and sessions, and removes the retired Bank Content follow-up workflow. It
 stops with an explicit error if both legacy and prefixed versions of a table
 are present.
 
