@@ -41,6 +41,20 @@ export interface UserProfile {
   createdAt: string;
 }
 
+export interface ManagedUser extends UserProfile {
+  isActive: boolean;
+}
+
+export interface ContentNotification {
+  id: number;
+  itemId: string;
+  itemName: string;
+  itemKind: "folder" | "file" | "link";
+  parentId: string | null;
+  createdAt: string;
+  readAt: string | null;
+}
+
 export type FollowUpStatus = "open" | "in_progress" | "resolved";
 
 export interface FollowUp {
@@ -56,6 +70,23 @@ export interface FollowUp {
   createdAt: string;
   updatedAt: string;
 }
+
+export type PlaybookForm =
+  | "follow-up-checklist"
+  | "monthly-target"
+  | "activity-record-plan"
+  | "customer-list"
+  | "prospect-list"
+  | "daily-tasks"
+  | "monthly-side-volume";
+
+export interface PlaybookCatalogs {
+  products: { code: string; name: string; price: number }[];
+  ranks: { code: string; name: string }[];
+  statuses: { id: number; name: string }[];
+}
+
+export type PlaybookRecord = Record<string, unknown> & { id: number };
 
 interface ApiEnvelope<T> {
   data: T;
@@ -209,4 +240,63 @@ export function updateFollowUp(id: string, status: FollowUpStatus) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ status }),
   });
+}
+
+export function getPlaybookCatalogs() {
+  return request<PlaybookCatalogs>("/api/v1/playbooks/catalogs");
+}
+
+export function getPlaybookRecords(form: PlaybookForm) {
+  return request<PlaybookRecord[]>(`/api/v1/playbooks/${form}`);
+}
+
+export function savePlaybookRecord(form: PlaybookForm, input: Record<string, unknown>) {
+  return request<PlaybookRecord>(`/api/v1/playbooks/${form}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+}
+
+export function deletePlaybookRecord(form: PlaybookForm, id: number) {
+  return request<{ deleted: boolean }>(`/api/v1/playbooks/${form}/${id}`, {
+    method: "DELETE",
+  });
+}
+
+export function getContentNotifications() {
+  return request<{ items: ContentNotification[]; unreadCount: number }>("/api/v1/notifications");
+}
+
+export function markContentNotificationRead(id: number) {
+  return request<{ read: boolean }>(`/api/v1/notifications/${id}/read`, {
+    method: "PATCH",
+  });
+}
+
+export function getContentItem(id: string) {
+  return request<ContentItem>(`/api/v1/items/${encodeURIComponent(id)}`);
+}
+
+export function getManagedUsers() {
+  return request<ManagedUser[]>("/api/v1/admin/users");
+}
+
+export function createManagedUser(input: { fullName: string; email: string; password: string }) {
+  return request<ManagedUser>("/api/v1/admin/users", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+}
+
+export function setManagedUserActive(id: string, isActive: boolean) {
+  return request<{ id: string; isActive: boolean }>(
+    `/api/v1/admin/users/${encodeURIComponent(id)}/status`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ isActive }),
+    },
+  );
 }

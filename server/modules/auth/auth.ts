@@ -25,6 +25,7 @@ interface UserRow extends RowDataPacket {
   password_hash?: string;
   password_salt?: string;
   created_at: Date | string;
+  is_active?: number;
 }
 
 declare global {
@@ -87,10 +88,27 @@ async function createSession(userId: string, response: Response) {
   const token = randomBytes(32).toString("hex");
   const db = await database;
   await db.execute("DELETE FROM sessions WHERE expires_at <= UTC_TIMESTAMP()");
-  await db.execute(
-    "INSERT INTO sessions (token_hash, user_id, expires_at) VALUES (?, ?, DATE_ADD(UTC_TIMESTAMP(), INTERVAL ? SECOND))",
-    [hashToken(token), userId, sessionLifetimeSeconds],
-  );
+  const connection = await db.getConnection();
+  try {
+    await connection.beginTransaction();
+    const [rows] = await connection.execute<Array<RowDataPacket & { is_active: number }>>(
+      "SELECT is_active FROM users WHERE id = ? FOR UPDATE",
+      [userId],
+    );
+    if (!rows[0]?.is_active) {
+      throw new ApiError(403, "This account has been disabled. Contact an administrator.");
+    }
+    await connection.execute(
+      "INSERT INTO sessions (token_hash, user_id, expires_at) VALUES (?, ?, DATE_ADD(UTC_TIMESTAMP(), INTERVAL ? SECOND))",
+      [hashToken(token), userId, sessionLifetimeSeconds],
+    );
+    await connection.commit();
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
   setSessionCookie(response, token);
 }
 
@@ -116,7 +134,7 @@ export async function signUp(
         [id, input.fullName, input.email, passwordHash, salt],
       );
       await connection.execute(
-        "INSERT INTO bc_user_roles (user_id, role) VALUES (?, 'user')",
+        "INSERT INTO user_roles (user_id, role) VALUES (?, 'user')",
         [id],
       );
       await connection.commit();
@@ -147,10 +165,10 @@ export async function logIn(input: { email: string; password: string }, response
   const db = await database;
   const [rows] = await db.execute<UserRow[]>(
     `SELECT users.id, users.full_name, users.email,
-       bc_user_roles.role, users.password_hash, users.password_salt,
+       user_roles.role, users.password_hash, users.password_salt, users.is_active,
        users.created_at
      FROM users
-     JOIN bc_user_roles ON bc_user_roles.user_id = users.id
+     JOIN user_roles ON user_roles.user_id = users.id
      WHERE users.email = ?`,
     [input.email],
   );
@@ -165,6 +183,7 @@ export async function logIn(input: { email: string; password: string }, response
   if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) {
     throw new ApiError(401, "Email or password is incorrect.");
   }
+  if (!user.is_active) throw new ApiError(403, "This account has been disabled. Contact an administrator.");
 
   await createSession(user.id, response);
   return toProfile(user);
@@ -177,11 +196,12 @@ export async function getAuthenticatedUser(request: Request) {
   const db = await database;
   const [rows] = await db.execute<UserRow[]>(
     `SELECT users.id, users.full_name, users.email,
-       bc_user_roles.role, users.created_at
+       user_roles.role, users.created_at, users.is_active
      FROM sessions
      JOIN users ON users.id = sessions.user_id
-     JOIN bc_user_roles ON bc_user_roles.user_id = users.id
-     WHERE sessions.token_hash = ? AND sessions.expires_at > UTC_TIMESTAMP()`,
+     JOIN user_roles ON user_roles.user_id = users.id
+     WHERE sessions.token_hash = ? AND sessions.expires_at > UTC_TIMESTAMP()
+       AND users.is_active = 1`,
     [hashToken(token)],
   );
   if (!rows[0]) throw new ApiError(401, "Your session has expired. Please log in again.");
@@ -241,12 +261,108 @@ export async function updateProfile(
   }
   const [rows] = await db.execute<UserRow[]>(
     `SELECT users.id, users.full_name, users.email,
-       bc_user_roles.role, users.created_at
+       user_roles.role, users.created_at, users.is_active
      FROM users
-     JOIN bc_user_roles ON bc_user_roles.user_id = users.id
+     JOIN user_roles ON user_roles.user_id = users.id
      WHERE users.id = ?`,
     [userId],
   );
   if (!rows[0]) throw new ApiError(404, "User profile was not found.");
   return toProfile(rows[0]);
+}
+
+export async function listManagedUsers() {
+  const db = await database;
+  const [rows] = await db.execute<Array<UserRow & { is_active: number }>>(
+    `SELECT users.id, users.full_name, users.email, user_roles.role,
+      users.created_at, users.is_active
+     FROM users
+     JOIN user_roles ON user_roles.user_id = users.id
+     ORDER BY users.full_name, users.email`,
+  );
+  return rows.map(row => ({
+    id: row.id,
+    fullName: row.full_name,
+    email: row.email,
+    role: row.role,
+    createdAt: new Date(row.created_at).toISOString(),
+    isActive: Boolean(row.is_active),
+  }));
+}
+
+export async function createManagedUser(input: {
+  fullName: string;
+  email: string;
+  password: string;
+}) {
+  const db = await database;
+  const id = randomUUID();
+  const salt = randomBytes(16).toString("hex");
+  const passwordHash = (await derivePassword(input.password, salt)).toString("hex");
+  const connection = await db.getConnection();
+  try {
+    await connection.beginTransaction();
+    await connection.execute(
+      "INSERT INTO users (id, full_name, email, password_hash, password_salt) VALUES (?, ?, ?, ?, ?)",
+      [id, input.fullName, input.email, passwordHash, salt],
+    );
+    await connection.execute(
+      "INSERT INTO user_roles (user_id, role) VALUES (?, 'user')",
+      [id],
+    );
+    await connection.commit();
+  } catch (error) {
+    await connection.rollback();
+    if (isDuplicateEntry(error)) {
+      throw new ApiError(409, "An account with that email already exists.");
+    }
+    throw error;
+  } finally {
+    connection.release();
+  }
+  return {
+    id,
+    fullName: input.fullName,
+    email: input.email,
+    role: "user" as const,
+    createdAt: new Date().toISOString(),
+    isActive: true,
+  };
+}
+
+export async function setManagedUserActive(id: string, isActive: boolean, adminId: string) {
+  if (id === adminId && !isActive) {
+    throw new ApiError(400, "You cannot disable your own administrator account.");
+  }
+  const db = await database;
+  const connection = await db.getConnection();
+  try {
+    await connection.beginTransaction();
+    const [adminRows] = await connection.execute<Array<RowDataPacket & { id: string }>>(
+      `SELECT users.id FROM users
+       JOIN user_roles ON user_roles.user_id = users.id
+       WHERE users.is_active = 1 AND user_roles.role = 'admin'
+       FOR UPDATE`,
+    );
+    const [userRows] = await connection.execute<Array<RowDataPacket & { id: string; role: string }>>(
+      `SELECT users.id, user_roles.role FROM users
+       JOIN user_roles ON user_roles.user_id = users.id
+       WHERE users.id = ? FOR UPDATE`,
+      [id],
+    );
+    const target = userRows[0];
+    if (!target) throw new ApiError(404, "User was not found.");
+    if (!isActive && target.role === "admin" && adminRows.length <= 1) {
+      throw new ApiError(400, "The last active administrator cannot be disabled.");
+    }
+    await connection.execute("UPDATE users SET is_active = ? WHERE id = ?", [isActive, id]);
+    if (!isActive) await connection.execute("DELETE FROM sessions WHERE user_id = ?", [id]);
+    await connection.commit();
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
+  return { id, isActive };
 }

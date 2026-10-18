@@ -27,20 +27,26 @@ npm run dev
 
 On startup, the API creates `DB_NAME` (default: `v_system`) if it does not exist, then applies pending SQL migrations and starts listening. The configured MySQL account therefore needs permission to create the database. Run the app with a least-privilege account in production. Open the Vite URL printed in the terminal; the API listens on `http://127.0.0.1:3001` and Vite proxies `/api` requests to it. Uploaded files are stored in `DATA_DIR`.
 
-Database schema and initial demo rows are defined in `server/database/migrations/`. Bank-content tables use the `bc_` prefix (`bc_items`, `bc_follow_ups`, `bc_user_roles`); playbook tables use `pb_`; shared user accounts, sessions and the migration ledger use `users`, `sessions` and `schema_migrations`. User accounts and login sessions are shared, while each application's authorization roles remain application-specific. Add a new numbered SQL file to make a schema change. At startup, legacy unprefixed bank-content tables are renamed to their prefixed equivalents. The pending migration renames the shared identity and migration tables in place. If both old and new table names exist, startup stops instead of risking data loss.
+Database schema and initial demo rows are defined in `server/database/migrations/`. Bank-content tables use the `bc_` prefix (`bc_items`, `bc_follow_ups`); bank-content authorization roles use `user_roles`; playbook tables use `pb_`; shared user accounts, sessions and the migration ledger use `users`, `sessions` and `schema_migrations`. User accounts and login sessions are shared, while each application's authorization roles remain application-specific. Add a new numbered SQL file to make a schema change. At startup, legacy unprefixed bank-content tables are renamed to their prefixed equivalents. Migrations rename shared identity and migration tables in place and rename the bank-content role table to `user_roles`. If both old and new table names exist, startup stops instead of risking data loss.
 
-See [docs/architecture.md](./docs/architecture.md) for the current module layout, intended feature boundaries, and infrastructure roadmap. Admin and user roles and follow-up workflows are implemented on MySQL. PostgreSQL/SQLite adapters, message brokers and SMTP delivery remain infrastructure targets.
+See [docs/architecture.md](./docs/architecture.md) for the current module layout, intended feature boundaries, and infrastructure roadmap. Admin and user roles, follow-up workflows, and the seven Playbooks forms are implemented on MySQL. PostgreSQL/SQLite adapters, message brokers and SMTP delivery remain infrastructure targets.
 
 Public sign-up always creates a user. To promote a trusted account to administrator, connect to the configured database and run:
 
 ```sql
-UPDATE bc_user_roles
-JOIN users ON users.id = bc_user_roles.user_id
-SET bc_user_roles.role = 'admin'
+UPDATE user_roles
+JOIN users ON users.id = user_roles.user_id
+SET user_roles.role = 'admin'
 WHERE users.email = 'admin@example.com';
 ```
 
-Only administrators can create folders, add links, or upload files. Users can browse, preview and download bank content, and can create and track their own follow-ups. Administrators can view and update the status of every follow-up.
+Administrators can add user accounts and disable or reactivate them from **Administrator → User Management**. Disabling an account blocks future logins and revokes its existing sessions; the last active administrator and the signed-in administrator cannot be disabled. Permanent user deletion is not available.
+
+Only administrators can create folders, add links, or upload files. Active user accounts receive persistent in-app notifications when new bank-content files, folders, or links are added by an administrator. Selecting a notification marks it read and opens the related content or containing folder.
+
+Users can browse, preview and download bank content, and can create and track their own follow-ups. Administrators can view and update the status of every follow-up.
+
+The Playbooks **Form** menu contains Follow Up Checklist, Monthly Target, Activity Record & Plan, Customer List, Prospect List, 7 Daily Tasks, and Monthly Side Volume Target. Each form has authenticated create, edit, list, and delete operations; records are scoped to the signed-in shared `users.id`, and Playbook access does not use the bank-content administrator role. Catalog data is seeded from the provided SQL dump, but its old account credentials and user-owned records are deliberately not imported or attached to a different shared account.
 
 For a production-style local run:
 
@@ -66,7 +72,17 @@ All responses use a `{ "data": ... }` success envelope or an `{ "error": { "mess
 | `GET` | `/api/v1/follow-ups` | List the current user's follow-ups (all follow-ups for administrators) |
 | `POST` | `/api/v1/follow-ups` | Create a follow-up |
 | `PATCH` | `/api/v1/follow-ups/:id` | Update follow-up status (administrator only) |
+| `GET` | `/api/v1/admin/users` | List accounts and enabled/disabled state (administrator only) |
+| `POST` | `/api/v1/admin/users` | Add a standard user account (administrator only) |
+| `PATCH` | `/api/v1/admin/users/:id/status` | Disable or reactivate an account (administrator only) |
+| `GET` | `/api/v1/notifications` | List recent notifications and total unread count for the signed-in user |
+| `PATCH` | `/api/v1/notifications/:id/read` | Mark the signed-in user's notification as read |
+| `GET` | `/api/v1/playbooks/catalogs` | List Playbook product, rank, and status options |
+| `GET` | `/api/v1/playbooks/:form` | List the signed-in user's records for a Playbook form |
+| `POST` | `/api/v1/playbooks/:form` | Create or update a Playbook form record |
+| `DELETE` | `/api/v1/playbooks/:form/:id` | Delete one of the signed-in user's Playbook records |
 | `GET` | `/api/v1/items?folderId=root&view=all&sort=name` | List contents, or search all content with `search=` |
+| `GET` | `/api/v1/items/:id` | Get one content item for notification navigation |
 | `GET` | `/api/v1/stats` | Workspace document, folder, review, and storage totals |
 | `GET` | `/api/v1/folders/:id/path` | Get a folder's breadcrumb path |
 | `POST` | `/api/v1/folders` | Create a folder with `{ "name": "...", "parentId": null }` |

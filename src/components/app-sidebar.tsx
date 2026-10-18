@@ -6,7 +6,8 @@ import {
   Database,
   FolderClosed,
   FolderOpen,
-  ClipboardList,
+  FileText,
+  FolderTree,
   LoaderCircle,
   Shield,
   Star,
@@ -20,11 +21,35 @@ import { getItems } from "../lib/api";
 import { cn } from "../lib/utils";
 
 export type WorkspaceView = "all" | "recent" | "starred" | "shared";
-export type WorkspacePage = "content" | "follow-ups" | "admin";
+export type PlaybookPage =
+  | "follow-up-checklist"
+  | "monthly-target"
+  | "activity-record-plan"
+  | "customer-list"
+  | "prospect-list"
+  | "daily-tasks"
+  | "monthly-side-volume";
+export type WorkspacePage = "content" | "follow-ups" | "admin" | "user-management" | PlaybookPage;
 
-const views: { name: string; value: WorkspaceView; icon: LucideIcon }[] = [
+const playbookPages: { name: string; value: PlaybookPage }[] = [
+  { name: "Follow Up Checklist", value: "follow-up-checklist" },
+  { name: "Monthly Target", value: "monthly-target" },
+  { name: "Activity Record & Plan", value: "activity-record-plan" },
+  { name: "Customer List", value: "customer-list" },
+  { name: "Prospect List", value: "prospect-list" },
+  { name: "7 Daily Tasks", value: "daily-tasks" },
+  { name: "Monthly Side Volume Target", value: "monthly-side-volume" },
+];
+
+export function isPlaybookPage(page: WorkspacePage): page is PlaybookPage {
+  return playbookPages.some(entry => entry.value === page);
+}
+
+const bankViews: { name: string; value: WorkspaceView; icon: LucideIcon }[] = [
   { name: "Contents", value: "all", icon: FolderClosed },
   { name: "Recent", value: "recent", icon: Clock3 },
+];
+const personalViews: { name: string; value: WorkspaceView; icon: LucideIcon }[] = [
   { name: "Starred", value: "starred", icon: Star },
   { name: "Shared with me", value: "shared", icon: UsersRound },
 ];
@@ -64,93 +89,210 @@ export function AppSidebar({
   onSelectFolder,
 }: AppSidebarProps) {
   const folderPathKey = folderPathIds.join("/");
+  const [administratorExpanded, setAdministratorExpanded] = useState(
+    page === "admin" || page === "user-management",
+  );
+  const [playbooksExpanded, setPlaybooksExpanded] = useState(isPlaybookPage(page));
+  const [bankContentExpanded, setBankContentExpanded] = useState(page === "content");
+  const [foldersExpanded, setFoldersExpanded] = useState(folderId !== null);
+
+  useEffect(() => {
+    if (page === "admin" || page === "user-management") setAdministratorExpanded(true);
+    if (isPlaybookPage(page)) setPlaybooksExpanded(true);
+    if (page === "content") setBankContentExpanded(true);
+  }, [page]);
+
+  useEffect(() => {
+    if (folderId) setFoldersExpanded(true);
+  }, [folderId]);
+
+  function groupButton(
+    label: string,
+    icon: LucideIcon,
+    expanded: boolean,
+    onToggle: () => void,
+    active: boolean,
+  ) {
+    const Icon = icon;
+    return (
+      <button
+        type="button"
+        aria-expanded={expanded}
+        onClick={onToggle}
+        className={cn(
+          "flex h-9 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-[11px] text-slate-600 transition-colors hover:bg-[#f5eff8] hover:text-[#754691]",
+          active && "font-semibold text-[#4A2260]",
+        )}
+      >
+        <Icon size={15} /> {label}
+        {expanded ? <ChevronDown size={13} className="ml-auto" /> : <ChevronRight size={13} className="ml-auto" />}
+      </button>
+    );
+  }
 
   return (
-    <aside className="hidden w-[232px] shrink-0 flex-col border-r border-border bg-white px-3 py-6 md:flex">
-      <p className="mb-2 px-2.5 text-[9px] font-bold uppercase tracking-[1.1px] text-slate-400">
-        Workspace
-      </p>
-      <nav className="space-y-0.5" aria-label="Workspace">
-        {views.map(entry => {
-          const Icon = entry.icon;
-          const selected = page === "content" && folderId === null && view === entry.value;
-          return (
-            <button
-              key={entry.value}
-              type="button"
-              onClick={() => onSelectView(entry.value)}
-              className={cn(
-                "flex h-9 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-[11px] text-slate-600 hover:bg-slate-50",
-                selected && "bg-blue-50 font-semibold text-blue-800 hover:bg-blue-50",
-              )}
-            >
-              <Icon size={15} /> {entry.name}
-            </button>
-          );
-        })}
-      </nav>
-      <div className="my-5 h-px bg-border" />
-      <p className="mb-2 px-2.5 text-[9px] font-bold uppercase tracking-[1.1px] text-slate-400">
-        Applications
-      </p>
+    <aside className="hidden w-[232px] shrink-0 flex-col overflow-y-auto border-r border-border bg-white px-3 py-6 md:flex">
       <nav className="space-y-0.5" aria-label="Applications">
         {isAdmin && (
-          <button
-            type="button"
-            onClick={() => onSelectPage("admin")}
-            className={cn(
-              "flex h-9 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-[11px] text-slate-600 hover:bg-slate-50",
-              page === "admin" && "bg-blue-50 font-semibold text-blue-800 hover:bg-blue-50",
+          <>
+            {groupButton(
+              "Administrator",
+              Shield,
+              administratorExpanded,
+              () => setAdministratorExpanded(value => !value),
+              page === "admin" || page === "user-management",
             )}
-          >
-            <Shield size={15} /> Admin overview
-          </button>
+            {administratorExpanded && (
+              <div className="ml-3 border-l border-border pl-2">
+                <button
+                  type="button"
+                  onClick={() => onSelectPage("admin")}
+                  className={cn(
+                    "flex min-h-8 w-full items-center rounded-md px-2.5 py-1.5 text-left text-[10px] text-slate-600 transition-colors hover:bg-[#f5eff8] hover:text-[#754691]",
+                    page === "admin" && "bg-[#f5eff8] font-semibold text-[#4A2260]",
+                  )}
+                >
+                  Admin overview
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onSelectPage("user-management")}
+                  className={cn(
+                    "flex min-h-8 w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-[10px] text-slate-600 transition-colors hover:bg-[#f5eff8] hover:text-[#754691]",
+                    page === "user-management" && "bg-[#f5eff8] font-semibold text-[#4A2260]",
+                  )}
+                >
+                  <UsersRound size={13} /> User Management
+                </button>
+              </div>
+            )}
+          </>
         )}
-        <button
-          type="button"
-          onClick={() => onSelectPage("follow-ups")}
-          className={cn(
-            "flex h-9 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-[11px] text-slate-600 hover:bg-slate-50",
-            page === "follow-ups" && "bg-blue-50 font-semibold text-blue-800 hover:bg-blue-50",
-          )}
-        >
-          <ClipboardList size={15} /> Playbooks
-        </button>
-      </nav>
-      <div className="my-5 h-px bg-border" />
-      <p className="mb-2 px-2.5 text-[9px] font-bold uppercase tracking-[1.1px] text-slate-400">
-        Folders
-      </p>
-      <nav className="space-y-0.5" aria-label="Folders" role="tree">
-        {rootFolders.map(folder => (
-          <FolderTreeNode
-            key={folder.id}
-            folder={folder}
-            depth={0}
-            folderId={folderId}
-            folderPathKey={folderPathKey}
-            onSelectFolder={onSelectFolder}
-          />
-        ))}
-        {!rootFolders.length && !departmentsError && (
-          <p className="px-2.5 py-2 text-[10px] text-muted">No folders yet.</p>
+        {groupButton("Playbooks", FileText, playbooksExpanded, () => setPlaybooksExpanded(value => !value), isPlaybookPage(page))}
+        {playbooksExpanded && (
+          <div className="ml-3 border-l border-border pl-2">
+            {playbookPages.map(entry => (
+              <button
+                key={entry.value}
+                type="button"
+                onClick={() => onSelectPage(entry.value)}
+                className={cn(
+                  "flex min-h-8 w-full items-center rounded-md px-2.5 py-1.5 text-left text-[10px] text-slate-600 transition-colors hover:bg-[#f5eff8] hover:text-[#754691]",
+                  page === entry.value && "bg-[#f5eff8] font-semibold text-[#4A2260]",
+                )}
+              >
+                {entry.name}
+              </button>
+            ))}
+          </div>
+        )}
+        {groupButton(
+          "Bank Content",
+          Database,
+          bankContentExpanded,
+          () => setBankContentExpanded(value => !value),
+          page === "content",
+        )}
+        {bankContentExpanded && (
+          <div className="ml-3 border-l border-border pl-2">
+            {bankViews.filter(entry => entry.value === "all").map(entry => {
+              const Icon = entry.icon;
+              const selected = page === "content" && folderId === null && view === entry.value;
+              return (
+                <button
+                  key={entry.value}
+                  type="button"
+                  onClick={() => onSelectView(entry.value)}
+                  className={cn(
+                    "flex min-h-8 w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-[10px] text-slate-600 transition-colors hover:bg-[#f5eff8] hover:text-[#754691]",
+                    selected && "bg-[#f5eff8] font-semibold text-[#4A2260]",
+                  )}
+                >
+                  <Icon size={13} /> {entry.name}
+                </button>
+              );
+            })}
+            <button
+              type="button"
+              aria-expanded={foldersExpanded}
+              onClick={() => setFoldersExpanded(value => !value)}
+              className={cn(
+                "flex min-h-8 w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-[10px] text-slate-600 transition-colors hover:bg-[#f5eff8] hover:text-[#754691]",
+                page === "content" && folderId !== null && "font-semibold text-[#4A2260]",
+              )}
+            >
+              {foldersExpanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+              <FolderTree size={13} /> Folders
+            </button>
+            {foldersExpanded && (
+              <nav className="space-y-0.5" aria-label="Folders" role="tree">
+                {rootFolders.map(folder => (
+                  <FolderTreeNode
+                    key={folder.id}
+                    folder={folder}
+                    depth={0}
+                    folderId={folderId}
+                    folderPathKey={folderPathKey}
+                    onSelectFolder={onSelectFolder}
+                  />
+                ))}
+                {!rootFolders.length && !departmentsError && (
+                  <p className="px-2.5 py-2 text-[10px] text-muted">No folders yet.</p>
+                )}
+              </nav>
+            )}
+            {bankViews.filter(entry => entry.value === "recent").map(entry => {
+              const Icon = entry.icon;
+              const selected = page === "content" && folderId === null && view === entry.value;
+              return (
+                <button
+                  key={entry.value}
+                  type="button"
+                  onClick={() => onSelectView(entry.value)}
+                  className={cn(
+                    "flex min-h-8 w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-[10px] text-slate-600 transition-colors hover:bg-[#f5eff8] hover:text-[#754691]",
+                    selected && "bg-[#f5eff8] font-semibold text-[#4A2260]",
+                  )}
+                >
+                  <Icon size={13} /> {entry.name}
+                </button>
+              );
+            })}
+            {personalViews.map(entry => {
+              const Icon = entry.icon;
+              const selected = page === "content" && folderId === null && view === entry.value;
+              return (
+                <button
+                  key={entry.value}
+                  type="button"
+                  onClick={() => onSelectView(entry.value)}
+                  className={cn(
+                    "flex min-h-8 w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-[10px] text-slate-600 transition-colors hover:bg-[#f5eff8] hover:text-[#754691]",
+                    selected && "bg-[#f5eff8] font-semibold text-[#4A2260]",
+                  )}
+                >
+                  <Icon size={13} /> {entry.name}
+                </button>
+              );
+            })}
+            {departmentsError && (
+              <div className="mx-2.5 mt-3 text-[10px] text-red-600">
+                <p>Folders could not be loaded: {departmentsError}</p>
+                <button type="button" className="mt-1 underline hover:text-[#754691]" onClick={onRetryDepartments}>
+                  Try again
+                </button>
+              </div>
+            )}
+          </div>
         )}
       </nav>
-      {departmentsError && (
-        <div className="mx-2.5 mt-3 text-[10px] text-red-600">
-          <p>Folders could not be loaded: {departmentsError}</p>
-          <button type="button" className="mt-1 underline" onClick={onRetryDepartments}>
-            Try again
-          </button>
-        </div>
-      )}
-      <div className="mt-auto px-2.5 pt-6">
+      {isAdmin && <div className="mt-auto px-2.5 pt-6">
         <div className="mb-2 flex items-center gap-2 text-[11px] font-semibold text-slate-700">
           <Database size={15} className="text-slate-500" /> Storage
         </div>
         <div className="h-1.5 overflow-hidden rounded-full bg-slate-100">
           <div
-            className="h-full rounded-full bg-blue-700"
+            className="h-full rounded-full bg-[#4A2260]"
             style={{
               width: `${stats ? Math.min(100, (stats.storageUsed / stats.storageLimit) * 100) : 0}%`,
             }}
@@ -169,6 +311,7 @@ export function AppSidebar({
           </span>
         </div>
       </div>
+      }
     </aside>
   );
 }
@@ -211,15 +354,15 @@ function FolderTreeNode({
     >
       <div
         className={cn(
-          "group flex h-8 items-center rounded-md pr-2 text-[10px] text-slate-600 hover:bg-slate-50",
-          folderId === folder.id && "bg-blue-50 font-semibold text-blue-800 hover:bg-blue-50",
+          "group flex h-8 items-center rounded-md pr-2 text-[10px] text-slate-600 transition-colors hover:bg-[#f5eff8] hover:text-[#754691]",
+          folderId === folder.id && "bg-[#f5eff8] font-semibold text-[#4A2260] hover:bg-[#f5eff8]",
         )}
         style={{ paddingLeft: `${8 + depth * 14}px` }}
       >
         {hasFolderChildren ? (
           <button
             type="button"
-            className="grid size-6 shrink-0 place-items-center rounded hover:bg-slate-200/70"
+            className="grid size-6 shrink-0 place-items-center rounded hover:bg-[#f5eff8] hover:text-[#754691]"
             onClick={() => setExpanded(value => !value)}
             aria-label={`${expanded ? "Collapse" : "Expand"} ${folder.name}`}
             aria-expanded={expanded}

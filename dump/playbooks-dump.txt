@@ -1,0 +1,910 @@
+CREATE TABLE ranks (
+  rank_code VARCHAR(10) PRIMARY KEY,
+  rank_name VARCHAR(50) NOT NULL,
+  `no` int(11) NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+INSERT INTO ranks VALUES ('MGR','Manager',1),('SMGR','Sapphire Manager',2),('DMGR','Diamond Manager',3),('EMGR','Emerald Manager',4),('RMGR','Ruby Manager',5),('SMGR2','Sapphire Manager 2',6),('DMGR2','Diamond Manager 2',7),('EMGR2','Emerald Manager 2',8),('RMGR2','Ruby Manager 2',9),('SMGR3','Sapphire Manager 3',10),('DMGR3','Diamond Manager 3',11),('EMGR3','Emerald Manager 3',12),('RMGR3','Ruby Manager 3',13);
+
+CREATE TABLE products (
+  `no` int(11) NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  product_code VARCHAR(20) NOT NULL UNIQUE,
+  product_name VARCHAR(100) NOT NULL,
+  product_price DECIMAL(10,2) NOT NULL,
+  status ENUM('Active','Inactive') NOT NULL DEFAULT 'Active',
+  created_date DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_date DATETIME NULL ON UPDATE CURRENT_TIMESTAMP,
+  deleted_date DATETIME NULL,
+  created_by VARCHAR(30) NULL, updated_by VARCHAR(30) NULL, deleted_by VARCHAR(30) NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+INSERT INTO products (product_code, product_name, product_price, status) VALUES
+  ('P001','Phytax',100.00,'Active'),('P002','Nutrelle',200.00,'Active'),('P003','Savva',300.00,'Active'),('P004','Afeeya',400.00,'Active'),('P005','Xeero',500.00,'Active');
+
+CREATE TABLE members (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  member_code VARCHAR(20) NOT NULL UNIQUE,
+  name VARCHAR(120) NOT NULL,
+  join_date DATE NOT NULL,
+  rank_code VARCHAR(10) NOT NULL DEFAULT 'MGR',
+  upline_code VARCHAR(20) NULL,
+  sponsor_code VARCHAR(20) NULL,
+  status ENUM('Active','Inactive') NOT NULL DEFAULT 'Active',
+  created_date DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_date DATETIME NULL ON UPDATE CURRENT_TIMESTAMP,
+  deleted_date DATETIME NULL,
+  created_by VARCHAR(30) NULL, updated_by VARCHAR(30) NULL, deleted_by VARCHAR(30) NULL,
+  INDEX (sponsor_code), INDEX (upline_code),
+  FOREIGN KEY (rank_code) REFERENCES ranks(rank_code)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE users (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  username VARCHAR(30) NOT NULL UNIQUE,
+  member_code VARCHAR(20) NOT NULL UNIQUE,
+  email VARCHAR(190) NOT NULL UNIQUE,
+  password_hash VARCHAR(255) NOT NULL,
+  confirm_token CHAR(64) NULL,
+  email_confirmed_at DATETIME NULL,
+  status ENUM('Active','Inactive') NOT NULL DEFAULT 'Active',
+  created_date DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_date DATETIME NULL ON UPDATE CURRENT_TIMESTAMP,
+  deleted_date DATETIME NULL,
+  created_by VARCHAR(30) NULL, updated_by VARCHAR(30) NULL, deleted_by VARCHAR(30) NULL,
+  FOREIGN KEY (member_code) REFERENCES members(member_code)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE followups (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  username VARCHAR(30) NOT NULL,
+  member_code VARCHAR(20) NOT NULL,
+  consume_product TINYINT(1) NOT NULL DEFAULT 0,
+  product_name VARCHAR(100) NULL,
+  consume_date DATE NULL,
+  prospect_list TINYINT(1) NOT NULL DEFAULT 0,
+  welcome_to_eskayvie TINYINT(1) NOT NULL DEFAULT 0,
+  product TINYINT(1) NOT NULL DEFAULT 0,
+  marketing_plan TINYINT(1) NOT NULL DEFAULT 0,
+  hbo TINYINT(1) NOT NULL DEFAULT 0,
+  remarks VARCHAR(255) NULL,
+  created_date DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_date DATETIME NULL ON UPDATE CURRENT_TIMESTAMP,
+  deleted_date DATETIME NULL,
+  created_by VARCHAR(30) NULL, updated_by VARCHAR(30) NULL, deleted_by VARCHAR(30) NULL,
+  UNIQUE KEY uq_follow (username, member_code),
+  FOREIGN KEY (username) REFERENCES users(username),
+  FOREIGN KEY (member_code) REFERENCES members(member_code)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE statuses (
+  id SMALLINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  status_name VARCHAR(50) NOT NULL UNIQUE,
+  sort_order SMALLINT NOT NULL DEFAULT 0
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+INSERT INTO statuses (status_name, sort_order) VALUES
+  ('Not Started', 1), ('In Progress', 2), ('Achieved', 3), ('Not Achieved', 4);
+
+CREATE TABLE monthly_targets (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  username VARCHAR(30) NOT NULL,
+  target_month TINYINT UNSIGNED NOT NULL,
+  target_year SMALLINT UNSIGNED NOT NULL,
+  created_date DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_date DATETIME NULL ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_monthly_target (username, target_year, target_month),
+  FOREIGN KEY (username) REFERENCES users(username)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE monthly_target_entries (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  monthly_target_id INT UNSIGNED NOT NULL,
+  day_of_month TINYINT UNSIGNED NOT NULL,
+  target_income BIGINT UNSIGNED NULL,
+  target_recruit INT UNSIGNED NULL,
+  target_ro INT UNSIGNED NULL,
+  rank_code VARCHAR(10) NULL,
+  effort TEXT NULL,
+  status_id SMALLINT UNSIGNED NULL,
+  UNIQUE KEY uq_monthly_target_day (monthly_target_id, day_of_month),
+  FOREIGN KEY (monthly_target_id) REFERENCES monthly_targets(id) ON DELETE CASCADE,
+  FOREIGN KEY (rank_code) REFERENCES ranks(rank_code),
+  FOREIGN KEY (status_id) REFERENCES statuses(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE activity_plans (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  username VARCHAR(30) NOT NULL,
+  plan_month TINYINT UNSIGNED NOT NULL,
+  plan_year SMALLINT UNSIGNED NOT NULL,
+  created_date DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_date DATETIME NULL ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_activity_plan (username, plan_year, plan_month),
+  FOREIGN KEY (username) REFERENCES users(username)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE activity_plan_entries (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  activity_plan_id INT UNSIGNED NOT NULL,
+  day_of_month TINYINT UNSIGNED NOT NULL,
+  activity TEXT NULL,
+  status_id SMALLINT UNSIGNED NULL,
+  UNIQUE KEY uq_activity_plan_day (activity_plan_id, day_of_month),
+  FOREIGN KEY (activity_plan_id) REFERENCES activity_plans(id) ON DELETE CASCADE,
+  FOREIGN KEY (status_id) REFERENCES statuses(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE customers (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  username VARCHAR(30) NOT NULL,
+  name VARCHAR(120) NOT NULL,
+  phone_number VARCHAR(40) NULL,
+  birth_date DATE NULL,
+  order_date DATE NULL,
+  notes TEXT NULL,
+  created_date DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_date DATETIME NULL ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_customers_user_name (username, name),
+  FOREIGN KEY (username) REFERENCES users(username)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE customer_products (
+  customer_id INT UNSIGNED NOT NULL,
+  product_code VARCHAR(20) NOT NULL,
+  PRIMARY KEY (customer_id, product_code),
+  FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE,
+  FOREIGN KEY (product_code) REFERENCES products(product_code)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE prospects (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  username VARCHAR(30) NOT NULL,
+  name VARCHAR(120) NOT NULL,
+  phone_number VARCHAR(40) NULL,
+  domicile VARCHAR(120) NULL,
+  occupation VARCHAR(120) NULL,
+  prospect_date DATE NULL,
+  response ENUM('Baik','Kurang','Tidak Baik') NULL,
+  reason TEXT NULL,
+  follow_up TINYINT(1) NOT NULL DEFAULT 0,
+  follow_up_date DATE NULL,
+  created_date DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_date DATETIME NULL ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_prospects_user (username, id),
+  FOREIGN KEY (username) REFERENCES users(username)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE daily_task_months (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  username VARCHAR(30) NOT NULL,
+  task_month TINYINT UNSIGNED NOT NULL,
+  task_year SMALLINT UNSIGNED NOT NULL,
+  created_date DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_date DATETIME NULL ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_daily_task_month (username, task_year, task_month),
+  FOREIGN KEY (username) REFERENCES users(username)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE daily_task_entries (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  month_record_id INT UNSIGNED NOT NULL,
+  day_of_month TINYINT UNSIGNED NOT NULL,
+  learn TINYINT(1) NOT NULL DEFAULT 0,
+  video_onboarding TINYINT(1) NOT NULL DEFAULT 0,
+  consume_product TINYINT(1) NOT NULL DEFAULT 0,
+  repeat_order TINYINT(1) NOT NULL DEFAULT 0,
+  attend_zoom TINYINT(1) NOT NULL DEFAULT 0,
+  contact_upline TINYINT(1) NOT NULL DEFAULT 0,
+  sponsoring TINYINT(1) NOT NULL DEFAULT 0,
+  UNIQUE KEY uq_daily_task_day (month_record_id, day_of_month),
+  FOREIGN KEY (month_record_id) REFERENCES daily_task_months(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE side_volume_months (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  username VARCHAR(30) NOT NULL,
+  target_year SMALLINT UNSIGNED NOT NULL,
+  target_month TINYINT UNSIGNED NOT NULL,
+  created_date DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_date DATETIME NULL ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_side_volume_month (username, target_year, target_month),
+  FOREIGN KEY (username) REFERENCES users(username)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE side_volume_entries (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  side_volume_month_id INT UNSIGNED NOT NULL,
+  product_code VARCHAR(20) NOT NULL,
+  target_value DECIMAL(15,2) NULL,
+  actual_value DECIMAL(15,2) NULL,
+  UNIQUE KEY uq_side_volume_product (side_volume_month_id, product_code),
+  FOREIGN KEY (side_volume_month_id) REFERENCES side_volume_months(id) ON DELETE CASCADE,
+  FOREIGN KEY (product_code) REFERENCES products(product_code)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+
+CREATE TABLE prospects (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  username VARCHAR(30) NOT NULL,
+  name VARCHAR(120) NOT NULL,
+  phone_number VARCHAR(40) NULL,
+  domicile VARCHAR(120) NULL,
+  occupation VARCHAR(120) NULL,
+  prospect_date DATE NULL,
+  response ENUM('Baik','Kurang','Tidak Baik') NULL,
+  reason TEXT NULL,
+  follow_up TINYINT(1) NOT NULL DEFAULT 0,
+  follow_up_date DATE NULL,
+  created_date DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_date DATETIME NULL ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_prospects_user (username, id),
+  FOREIGN KEY (username) REFERENCES users(username)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE statuses (
+  id SMALLINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  status_name VARCHAR(50) NOT NULL UNIQUE,
+  sort_order SMALLINT NOT NULL DEFAULT 0
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+INSERT INTO statuses (status_name, sort_order) VALUES
+  ('Not Started', 1), ('In Progress', 2), ('Achieved', 3), ('Not Achieved', 4);
+
+CREATE TABLE monthly_targets (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  username VARCHAR(30) NOT NULL,
+  target_month TINYINT UNSIGNED NOT NULL,
+  target_year SMALLINT UNSIGNED NOT NULL,
+  created_date DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_date DATETIME NULL ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_monthly_target (username, target_year, target_month),
+  FOREIGN KEY (username) REFERENCES users(username)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE monthly_target_entries (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  monthly_target_id INT UNSIGNED NOT NULL,
+  day_of_month TINYINT UNSIGNED NOT NULL,
+  target_income BIGINT UNSIGNED NULL,
+  target_recruit INT UNSIGNED NULL,
+  target_ro INT UNSIGNED NULL,
+  rank_code VARCHAR(10) NULL,
+  effort TEXT NULL,
+  status_id SMALLINT UNSIGNED NULL,
+  UNIQUE KEY uq_monthly_target_day (monthly_target_id, day_of_month),
+  FOREIGN KEY (monthly_target_id) REFERENCES monthly_targets(id) ON DELETE CASCADE,
+  FOREIGN KEY (rank_code) REFERENCES ranks(rank_code),
+  FOREIGN KEY (status_id) REFERENCES statuses(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+UPDATE monthly_target_entries SET target_income = ROUND(target_income) WHERE target_income IS NOT NULL;
+ALTER TABLE monthly_target_entries MODIFY target_income BIGINT UNSIGNED NULL;
+
+-- MySQL dump 10.13  Distrib 8.0.19, for Win64 (x86_64)
+--
+-- Host: localhost    Database: eskayvie_followup
+-- ------------------------------------------------------
+-- Server version	5.5.5-10.4.32-MariaDB
+
+/*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
+/*!40101 SET @OLD_CHARACTER_SET_RESULTS=@@CHARACTER_SET_RESULTS */;
+/*!40101 SET @OLD_COLLATION_CONNECTION=@@COLLATION_CONNECTION */;
+/*!50503 SET NAMES utf8mb4 */;
+/*!40103 SET @OLD_TIME_ZONE=@@TIME_ZONE */;
+/*!40103 SET TIME_ZONE='+00:00' */;
+/*!40014 SET @OLD_UNIQUE_CHECKS=@@UNIQUE_CHECKS, UNIQUE_CHECKS=0 */;
+/*!40014 SET @OLD_FOREIGN_KEY_CHECKS=@@FOREIGN_KEY_CHECKS, FOREIGN_KEY_CHECKS=0 */;
+/*!40101 SET @OLD_SQL_MODE=@@SQL_MODE, SQL_MODE='NO_AUTO_VALUE_ON_ZERO' */;
+/*!40111 SET @OLD_SQL_NOTES=@@SQL_NOTES, SQL_NOTES=0 */;
+
+--
+-- Table structure for table `activity_plan_entries`
+--
+
+DROP TABLE IF EXISTS `activity_plan_entries`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `activity_plan_entries` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `activity_plan_id` int(10) unsigned NOT NULL,
+  `day_of_month` tinyint(3) unsigned NOT NULL,
+  `activity` text DEFAULT NULL,
+  `status_id` smallint(5) unsigned DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_activity_plan_day` (`activity_plan_id`,`day_of_month`),
+  KEY `status_id` (`status_id`),
+  CONSTRAINT `activity_plan_entries_ibfk_1` FOREIGN KEY (`activity_plan_id`) REFERENCES `activity_plans` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `activity_plan_entries_ibfk_2` FOREIGN KEY (`status_id`) REFERENCES `statuses` (`id`)
+) ENGINE=InnoDB AUTO_INCREMENT=9 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Dumping data for table `activity_plan_entries`
+--
+
+LOCK TABLES `activity_plan_entries` WRITE;
+/*!40000 ALTER TABLE `activity_plan_entries` DISABLE KEYS */;
+INSERT INTO `activity_plan_entries` VALUES (1,1,1,'HBO\r\nHome Sharing',2),(5,1,30,'Meeting dengan Pak Sam',1),(7,1,11,'A\r\nB\r\nC',1);
+/*!40000 ALTER TABLE `activity_plan_entries` ENABLE KEYS */;
+UNLOCK TABLES;
+
+--
+-- Table structure for table `activity_plans`
+--
+
+DROP TABLE IF EXISTS `activity_plans`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `activity_plans` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `username` varchar(30) NOT NULL,
+  `plan_month` tinyint(3) unsigned NOT NULL,
+  `plan_year` smallint(5) unsigned NOT NULL,
+  `created_date` datetime NOT NULL DEFAULT current_timestamp(),
+  `updated_date` datetime DEFAULT NULL ON UPDATE current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_activity_plan` (`username`,`plan_year`,`plan_month`),
+  CONSTRAINT `activity_plans_ibfk_1` FOREIGN KEY (`username`) REFERENCES `users` (`username`)
+) ENGINE=InnoDB AUTO_INCREMENT=6 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Dumping data for table `activity_plans`
+--
+
+LOCK TABLES `activity_plans` WRITE;
+/*!40000 ALTER TABLE `activity_plans` DISABLE KEYS */;
+INSERT INTO `activity_plans` VALUES (1,'ESK320289',10,2026,'2026-10-07 11:00:45',NULL);
+/*!40000 ALTER TABLE `activity_plans` ENABLE KEYS */;
+UNLOCK TABLES;
+
+--
+-- Table structure for table `customer_products`
+--
+
+DROP TABLE IF EXISTS `customer_products`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `customer_products` (
+  `customer_id` int(10) unsigned NOT NULL,
+  `product_code` varchar(20) NOT NULL,
+  PRIMARY KEY (`customer_id`,`product_code`),
+  KEY `product_code` (`product_code`),
+  CONSTRAINT `customer_products_ibfk_1` FOREIGN KEY (`customer_id`) REFERENCES `customers` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `customer_products_ibfk_2` FOREIGN KEY (`product_code`) REFERENCES `products` (`product_code`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Dumping data for table `customer_products`
+--
+
+LOCK TABLES `customer_products` WRITE;
+/*!40000 ALTER TABLE `customer_products` DISABLE KEYS */;
+INSERT INTO `customer_products` VALUES (2,'P001'),(2,'P002');
+/*!40000 ALTER TABLE `customer_products` ENABLE KEYS */;
+UNLOCK TABLES;
+
+--
+-- Table structure for table `customers`
+--
+
+DROP TABLE IF EXISTS `customers`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `customers` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `username` varchar(30) NOT NULL,
+  `name` varchar(120) NOT NULL,
+  `phone_number` varchar(40) DEFAULT NULL,
+  `birth_date` date DEFAULT NULL,
+  `order_date` date DEFAULT NULL,
+  `notes` text DEFAULT NULL,
+  `created_date` datetime NOT NULL DEFAULT current_timestamp(),
+  `updated_date` datetime DEFAULT NULL ON UPDATE current_timestamp(),
+  PRIMARY KEY (`id`),
+  KEY `idx_customers_user_name` (`username`,`name`),
+  CONSTRAINT `customers_ibfk_1` FOREIGN KEY (`username`) REFERENCES `users` (`username`)
+) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Dumping data for table `customers`
+--
+
+LOCK TABLES `customers` WRITE;
+/*!40000 ALTER TABLE `customers` DISABLE KEYS */;
+INSERT INTO `customers` VALUES (2,'ESK320289','Hilal','08180','1998-11-10',NULL,NULL,'2026-10-07 14:35:47',NULL);
+/*!40000 ALTER TABLE `customers` ENABLE KEYS */;
+UNLOCK TABLES;
+
+--
+-- Table structure for table `daily_task_entries`
+--
+
+DROP TABLE IF EXISTS `daily_task_entries`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `daily_task_entries` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `month_record_id` int(10) unsigned NOT NULL,
+  `day_of_month` tinyint(3) unsigned NOT NULL,
+  `learn` tinyint(1) NOT NULL DEFAULT 0,
+  `video_onboarding` tinyint(1) NOT NULL DEFAULT 0,
+  `consume_product` tinyint(1) NOT NULL DEFAULT 0,
+  `repeat_order` tinyint(1) NOT NULL DEFAULT 0,
+  `attend_zoom` tinyint(1) NOT NULL DEFAULT 0,
+  `contact_upline` tinyint(1) NOT NULL DEFAULT 0,
+  `sponsoring` tinyint(1) NOT NULL DEFAULT 0,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_daily_task_day` (`month_record_id`,`day_of_month`),
+  CONSTRAINT `daily_task_entries_ibfk_1` FOREIGN KEY (`month_record_id`) REFERENCES `daily_task_months` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB AUTO_INCREMENT=6 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Dumping data for table `daily_task_entries`
+--
+
+LOCK TABLES `daily_task_entries` WRITE;
+/*!40000 ALTER TABLE `daily_task_entries` DISABLE KEYS */;
+INSERT INTO `daily_task_entries` VALUES (3,3,1,1,0,0,0,0,0,0),(4,3,2,0,0,1,0,0,0,0),(5,3,3,0,1,0,0,0,0,0);
+/*!40000 ALTER TABLE `daily_task_entries` ENABLE KEYS */;
+UNLOCK TABLES;
+
+--
+-- Table structure for table `daily_task_months`
+--
+
+DROP TABLE IF EXISTS `daily_task_months`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `daily_task_months` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `username` varchar(30) NOT NULL,
+  `task_month` tinyint(3) unsigned NOT NULL,
+  `task_year` smallint(5) unsigned NOT NULL,
+  `created_date` datetime NOT NULL DEFAULT current_timestamp(),
+  `updated_date` datetime DEFAULT NULL ON UPDATE current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_daily_task_month` (`username`,`task_year`,`task_month`),
+  CONSTRAINT `daily_task_months_ibfk_1` FOREIGN KEY (`username`) REFERENCES `users` (`username`)
+) ENGINE=InnoDB AUTO_INCREMENT=6 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Dumping data for table `daily_task_months`
+--
+
+LOCK TABLES `daily_task_months` WRITE;
+/*!40000 ALTER TABLE `daily_task_months` DISABLE KEYS */;
+INSERT INTO `daily_task_months` VALUES (3,'ESK320289',1,2026,'2026-10-07 19:52:55',NULL);
+/*!40000 ALTER TABLE `daily_task_months` ENABLE KEYS */;
+UNLOCK TABLES;
+
+--
+-- Table structure for table `followups`
+--
+
+DROP TABLE IF EXISTS `followups`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `followups` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `username` varchar(30) NOT NULL,
+  `member_code` varchar(20) NOT NULL,
+  `consume_product` tinyint(1) NOT NULL DEFAULT 0,
+  `product_name` varchar(100) DEFAULT NULL,
+  `consume_date` date DEFAULT NULL,
+  `prospect_list` tinyint(1) NOT NULL DEFAULT 0,
+  `welcome_to_eskayvie` tinyint(1) NOT NULL DEFAULT 0,
+  `product` tinyint(1) NOT NULL DEFAULT 0,
+  `marketing_plan` tinyint(1) NOT NULL DEFAULT 0,
+  `hbo` tinyint(1) NOT NULL DEFAULT 0,
+  `remarks` varchar(255) DEFAULT NULL,
+  `created_date` datetime NOT NULL DEFAULT current_timestamp(),
+  `updated_date` datetime DEFAULT NULL ON UPDATE current_timestamp(),
+  `deleted_date` datetime DEFAULT NULL,
+  `created_by` varchar(30) DEFAULT NULL,
+  `updated_by` varchar(30) DEFAULT NULL,
+  `deleted_by` varchar(30) DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_follow` (`username`,`member_code`),
+  KEY `member_code` (`member_code`),
+  CONSTRAINT `followups_ibfk_1` FOREIGN KEY (`username`) REFERENCES `users` (`username`),
+  CONSTRAINT `followups_ibfk_2` FOREIGN KEY (`member_code`) REFERENCES `members` (`member_code`)
+) ENGINE=InnoDB AUTO_INCREMENT=23 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Dumping data for table `followups`
+--
+
+LOCK TABLES `followups` WRITE;
+/*!40000 ALTER TABLE `followups` DISABLE KEYS */;
+INSERT INTO `followups` VALUES (1,'ESK320289','ESK107005',1,'P005','2026-10-02',1,1,1,1,0,'hhhh','2026-10-02 10:09:01','2026-10-08 11:15:30',NULL,'ESK320289','ESK320289',NULL),(18,'ESK320289','ESK478273',0,NULL,NULL,0,1,0,0,0,NULL,'2026-10-07 13:55:22',NULL,NULL,'ESK320289',NULL,NULL);
+/*!40000 ALTER TABLE `followups` ENABLE KEYS */;
+UNLOCK TABLES;
+
+--
+-- Table structure for table `members`
+--
+
+DROP TABLE IF EXISTS `members`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `members` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `member_code` varchar(20) NOT NULL,
+  `name` varchar(120) NOT NULL,
+  `join_date` date NOT NULL,
+  `rank_code` varchar(10) NOT NULL DEFAULT 'MGR',
+  `upline_code` varchar(20) DEFAULT NULL,
+  `sponsor_code` varchar(20) DEFAULT NULL,
+  `status` enum('Active','Inactive') NOT NULL DEFAULT 'Active',
+  `created_date` datetime NOT NULL DEFAULT current_timestamp(),
+  `updated_date` datetime DEFAULT NULL ON UPDATE current_timestamp(),
+  `deleted_date` datetime DEFAULT NULL,
+  `created_by` varchar(30) DEFAULT NULL,
+  `updated_by` varchar(30) DEFAULT NULL,
+  `deleted_by` varchar(30) DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `member_code` (`member_code`),
+  KEY `sponsor_code` (`sponsor_code`),
+  KEY `upline_code` (`upline_code`),
+  KEY `rank_code` (`rank_code`),
+  CONSTRAINT `members_ibfk_1` FOREIGN KEY (`rank_code`) REFERENCES `ranks` (`rank_code`)
+) ENGINE=InnoDB AUTO_INCREMENT=40 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Dumping data for table `members`
+--
+
+LOCK TABLES `members` WRITE;
+/*!40000 ALTER TABLE `members` DISABLE KEYS */;
+INSERT INTO `members` VALUES (1,'ESK534083','hilal','2026-09-30','MGR',NULL,NULL,'Active','2026-09-30 19:00:17',NULL,NULL,'self-signup',NULL,NULL),(2,'ESK674195','hilal002','2026-09-30','MGR',NULL,NULL,'Active','2026-09-30 19:07:46',NULL,NULL,'self-signup',NULL,NULL),(3,'ESK546107','downline001-hilal002','2026-09-30','MGR','ESK674195','ESK674195','Active','2026-09-30 19:12:53',NULL,NULL,'ESK674195',NULL,NULL),(4,'ESK140082','hilal001','2026-10-01','MGR',NULL,NULL,'Active','2026-10-01 09:55:20',NULL,NULL,'self-signup',NULL,NULL),(5,'ESK611636','downlina001','2026-10-01','MGR','ESK140082','ESK140082','Active','2026-10-01 09:56:59',NULL,NULL,'ESK140082',NULL,NULL),(6,'ESK669188','d002','2026-10-01','SMGR','ESK140082','ESK140082','Active','2026-10-01 09:57:56',NULL,NULL,'ESK140082',NULL,NULL),(7,'ESK615479','Rudy','2026-10-01','MGR',NULL,NULL,'Active','2026-10-01 10:43:27',NULL,NULL,'self-signup',NULL,NULL),(8,'ESK248430','Rudy001','2026-10-01','MGR',NULL,NULL,'Active','2026-10-01 10:44:08',NULL,NULL,'self-signup',NULL,NULL),(9,'ESK828932','hargi','2026-10-01','MGR','ESK248430','ESK248430','Active','2026-10-01 10:45:04',NULL,NULL,'ESK248430',NULL,NULL),(10,'ESK842874','andhika','2026-07-28','SMGR','ESK248430','ESK248430','Active','2026-10-01 10:47:00',NULL,NULL,'ESK248430',NULL,NULL),(11,'ESK930735','sam','2026-10-01','MGR',NULL,NULL,'Active','2026-10-01 15:52:26',NULL,NULL,'self-signup',NULL,NULL),(12,'ESK176225','sam001','2026-10-01','MGR',NULL,NULL,'Active','2026-10-01 15:54:02',NULL,NULL,'self-signup',NULL,NULL),(13,'ESK498154','hilal009','2026-10-01','MGR',NULL,NULL,'Active','2026-10-01 15:55:09',NULL,NULL,'self-signup',NULL,NULL),(14,'ESK770995','hilal010','2026-10-01','MGR',NULL,NULL,'Active','2026-10-01 15:57:31',NULL,NULL,'self-signup',NULL,NULL),(15,'ESK740625','hilal011','2026-10-01','MGR',NULL,NULL,'Active','2026-10-01 15:58:15',NULL,NULL,'self-signup',NULL,NULL),(16,'ESK269924','hilal012','2026-10-01','MGR',NULL,NULL,'Active','2026-10-01 15:59:12',NULL,NULL,'self-signup',NULL,NULL),(17,'ESK562924','hilal013','2026-10-01','MGR',NULL,NULL,'Active','2026-10-01 16:00:09',NULL,NULL,'self-signup',NULL,NULL),(18,'ESK987476','hilal014','2026-10-01','MGR',NULL,NULL,'Active','2026-10-01 16:16:36',NULL,NULL,'self-signup',NULL,NULL),(20,'ESK162311','hilal015','2026-10-01','MGR',NULL,NULL,'Active','2026-10-01 16:38:18',NULL,NULL,'self-signup',NULL,NULL),(21,'ESK779846','hilal016','2026-10-01','MGR',NULL,NULL,'Active','2026-10-01 16:39:30',NULL,NULL,'self-signup',NULL,NULL),(22,'ESK382444','hilal017','2026-10-01','MGR',NULL,NULL,'Active','2026-10-01 16:41:16',NULL,NULL,'self-signup',NULL,NULL),(23,'ESK749130','hilal018','2026-10-01','MGR',NULL,NULL,'Active','2026-10-01 16:42:59',NULL,NULL,'self-signup',NULL,NULL),(24,'ESK520943','sam100','2026-10-01','MGR',NULL,NULL,'Active','2026-10-01 16:52:16',NULL,NULL,'self-signup',NULL,NULL),(25,'ESK397713','sam101','2026-10-01','MGR',NULL,NULL,'Active','2026-10-01 16:53:10',NULL,NULL,'self-signup',NULL,NULL),(26,'ESK354755','sam102','2026-10-01','MGR',NULL,NULL,'Active','2026-10-01 16:58:14',NULL,NULL,'self-signup',NULL,NULL),(27,'ESK148698','sam103','2026-10-01','MGR',NULL,NULL,'Active','2026-10-01 16:59:08',NULL,NULL,'self-signup',NULL,NULL),(28,'ESK320289','sam105','2026-10-01','MGR',NULL,NULL,'Active','2026-10-01 17:02:07',NULL,NULL,'self-signup',NULL,NULL),(29,'ESK810613','sam110','2026-10-01','MGR',NULL,NULL,'Active','2026-10-01 17:03:22',NULL,NULL,'self-signup',NULL,NULL),(30,'ESK102771','sam115','2026-10-01','MGR',NULL,NULL,'Active','2026-10-01 17:05:19',NULL,NULL,'self-signup',NULL,NULL),(31,'ESK669954','sam111','2026-10-01','MGR',NULL,NULL,'Active','2026-10-01 17:08:09',NULL,NULL,'self-signup',NULL,NULL),(32,'ESK192054','a','2026-10-01','MBR','ESK669954','ESK669954','Active','2026-10-01 17:08:44',NULL,NULL,'ESK669954',NULL,NULL),(33,'ESK210208','b','2026-10-01','SMB','ESK669954','ESK669954','Active','2026-10-01 17:08:58',NULL,NULL,'ESK669954',NULL,NULL),(36,'ESK705500','Roslan','2026-10-02','SMB','ESK320289','ESK320289','Active','2026-10-02 10:07:55',NULL,NULL,'ESK320289',NULL,NULL),(37,'ESK478273','Roslan','2026-10-02','SMB','ESK320289','ESK320289','Active','2026-10-02 10:07:56',NULL,NULL,'ESK320289',NULL,NULL),(38,'ESK107005','Andhika','2026-10-02','MBR','ESK320289','ESK320289','Active','2026-10-02 10:08:40','2026-10-08 11:15:29',NULL,'ESK320289','ESK320289',NULL),(39,'ESK632552','Vina','2026-10-01','SMB','ESK320289','ESK320289','Active','2026-10-08 11:15:43',NULL,NULL,'ESK320289',NULL,NULL);
+/*!40000 ALTER TABLE `members` ENABLE KEYS */;
+UNLOCK TABLES;
+
+--
+-- Table structure for table `monthly_target_entries`
+--
+
+DROP TABLE IF EXISTS `monthly_target_entries`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `monthly_target_entries` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `monthly_target_id` int(10) unsigned NOT NULL,
+  `day_of_month` tinyint(3) unsigned NOT NULL,
+  `target_income` decimal(15,2) DEFAULT NULL,
+  `target_recruit` int(10) unsigned DEFAULT NULL,
+  `target_ro` int(10) unsigned DEFAULT NULL,
+  `rank_code` varchar(10) DEFAULT NULL,
+  `effort` text DEFAULT NULL,
+  `status_id` smallint(5) unsigned DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_monthly_target_day` (`monthly_target_id`,`day_of_month`),
+  KEY `rank_code` (`rank_code`),
+  KEY `status_id` (`status_id`),
+  CONSTRAINT `monthly_target_entries_ibfk_1` FOREIGN KEY (`monthly_target_id`) REFERENCES `monthly_targets` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `monthly_target_entries_ibfk_2` FOREIGN KEY (`rank_code`) REFERENCES `ranks` (`rank_code`),
+  CONSTRAINT `monthly_target_entries_ibfk_3` FOREIGN KEY (`status_id`) REFERENCES `statuses` (`id`)
+) ENGINE=InnoDB AUTO_INCREMENT=25 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Dumping data for table `monthly_target_entries`
+--
+
+LOCK TABLES `monthly_target_entries` WRITE;
+/*!40000 ALTER TABLE `monthly_target_entries` DISABLE KEYS */;
+INSERT INTO `monthly_target_entries` VALUES (1,1,6,1000000.00,100,1400000,'DMGR','test1\r\ntset2\r\ntest 3',2),(2,1,4,NULL,NULL,NULL,'SMB',NULL,NULL),(3,1,5,NULL,NULL,NULL,'SMB',NULL,NULL),(20,1,12,5000.00,60,45,'DMGR','test',2);
+/*!40000 ALTER TABLE `monthly_target_entries` ENABLE KEYS */;
+UNLOCK TABLES;
+
+--
+-- Table structure for table `monthly_targets`
+--
+
+DROP TABLE IF EXISTS `monthly_targets`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `monthly_targets` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `username` varchar(30) NOT NULL,
+  `target_month` tinyint(3) unsigned NOT NULL,
+  `target_year` smallint(5) unsigned NOT NULL,
+  `created_date` datetime NOT NULL DEFAULT current_timestamp(),
+  `updated_date` datetime DEFAULT NULL ON UPDATE current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_monthly_target` (`username`,`target_year`,`target_month`),
+  CONSTRAINT `monthly_targets_ibfk_1` FOREIGN KEY (`username`) REFERENCES `users` (`username`)
+) ENGINE=InnoDB AUTO_INCREMENT=9 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Dumping data for table `monthly_targets`
+--
+
+LOCK TABLES `monthly_targets` WRITE;
+/*!40000 ALTER TABLE `monthly_targets` DISABLE KEYS */;
+INSERT INTO `monthly_targets` VALUES (1,'ESK320289',10,2026,'2026-10-07 10:09:09',NULL);
+/*!40000 ALTER TABLE `monthly_targets` ENABLE KEYS */;
+UNLOCK TABLES;
+
+--
+-- Table structure for table `products`
+--
+
+DROP TABLE IF EXISTS `products`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `products` (
+  `no` int(11) NOT NULL AUTO_INCREMENT,
+  `product_code` varchar(20) NOT NULL,
+  `product_name` varchar(100) NOT NULL,
+  `product_price` decimal(10,2) NOT NULL,
+  `status` enum('Active','Inactive') NOT NULL DEFAULT 'Active',
+  `created_date` datetime NOT NULL DEFAULT current_timestamp(),
+  `updated_date` datetime DEFAULT NULL ON UPDATE current_timestamp(),
+  `deleted_date` datetime DEFAULT NULL,
+  `created_by` varchar(30) DEFAULT NULL,
+  `updated_by` varchar(30) DEFAULT NULL,
+  `deleted_by` varchar(30) DEFAULT NULL,
+  PRIMARY KEY (`no`),
+  UNIQUE KEY `product_code` (`product_code`)
+) ENGINE=InnoDB AUTO_INCREMENT=6 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Dumping data for table `products`
+--
+
+LOCK TABLES `products` WRITE;
+/*!40000 ALTER TABLE `products` DISABLE KEYS */;
+INSERT INTO `products` VALUES (1,'P001','Phytax',100.00,'Active','2026-10-07 13:34:36',NULL,NULL,NULL,NULL,NULL),(2,'P002','Nutrelle',200.00,'Active','2026-10-07 13:34:36',NULL,NULL,NULL,NULL,NULL),(3,'P003','Savva',300.00,'Active','2026-10-07 13:34:36',NULL,NULL,NULL,NULL,NULL),(4,'P004','Afeeya',400.00,'Active','2026-10-07 13:34:36',NULL,NULL,NULL,NULL,NULL),(5,'P005','Xeero',500.00,'Active','2026-10-07 13:34:36',NULL,NULL,NULL,NULL,NULL);
+/*!40000 ALTER TABLE `products` ENABLE KEYS */;
+UNLOCK TABLES;
+
+--
+-- Table structure for table `prospects`
+--
+
+DROP TABLE IF EXISTS `prospects`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `prospects` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `username` varchar(30) NOT NULL,
+  `name` varchar(120) NOT NULL,
+  `phone_number` varchar(40) DEFAULT NULL,
+  `domicile` varchar(120) DEFAULT NULL,
+  `occupation` varchar(120) DEFAULT NULL,
+  `prospect_date` date DEFAULT NULL,
+  `response` enum('Baik','Kurang','Tidak Baik') DEFAULT NULL,
+  `reason` text DEFAULT NULL,
+  `follow_up` tinyint(1) NOT NULL DEFAULT 0,
+  `follow_up_date` date DEFAULT NULL,
+  `created_date` datetime NOT NULL DEFAULT current_timestamp(),
+  `updated_date` datetime DEFAULT NULL ON UPDATE current_timestamp(),
+  PRIMARY KEY (`id`),
+  KEY `idx_prospects_user` (`username`,`id`),
+  CONSTRAINT `prospects_ibfk_1` FOREIGN KEY (`username`) REFERENCES `users` (`username`)
+) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Dumping data for table `prospects`
+--
+
+LOCK TABLES `prospects` WRITE;
+/*!40000 ALTER TABLE `prospects` DISABLE KEYS */;
+INSERT INTO `prospects` VALUES (2,'ESK320289','Prospek 001','0817','Jakarta',NULL,'2026-10-07','Baik',NULL,0,NULL,'2026-10-07 15:57:37',NULL);
+/*!40000 ALTER TABLE `prospects` ENABLE KEYS */;
+UNLOCK TABLES;
+
+--
+-- Table structure for table `ranks`
+--
+
+DROP TABLE IF EXISTS `ranks`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `ranks` (
+  `rank_code` varchar(10) NOT NULL,
+  `rank_name` varchar(50) NOT NULL,
+  `no` int(11) NOT NULL,
+  PRIMARY KEY (`rank_code`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Dumping data for table `ranks`
+--
+
+LOCK TABLES `ranks` WRITE;
+/*!40000 ALTER TABLE `ranks` DISABLE KEYS */;
+INSERT INTO `ranks` VALUES ('DMGR','Diamond Manager',6),('MBR','Member',1),('MGR','Manager',4),('SMB','Senior Member',2),('SMGR','Sapphire Manager',5),('SPV','Supervisor',3);
+/*!40000 ALTER TABLE `ranks` ENABLE KEYS */;
+UNLOCK TABLES;
+
+--
+-- Table structure for table `side_volume_entries`
+--
+
+DROP TABLE IF EXISTS `side_volume_entries`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `side_volume_entries` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `side_volume_month_id` int(10) unsigned NOT NULL,
+  `product_code` varchar(20) NOT NULL,
+  `target_value` decimal(15,2) DEFAULT NULL,
+  `actual_value` decimal(15,2) DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_side_volume_product` (`side_volume_month_id`,`product_code`),
+  KEY `product_code` (`product_code`),
+  CONSTRAINT `side_volume_entries_ibfk_1` FOREIGN KEY (`side_volume_month_id`) REFERENCES `side_volume_months` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `side_volume_entries_ibfk_2` FOREIGN KEY (`product_code`) REFERENCES `products` (`product_code`)
+) ENGINE=InnoDB AUTO_INCREMENT=15 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Dumping data for table `side_volume_entries`
+--
+
+LOCK TABLES `side_volume_entries` WRITE;
+/*!40000 ALTER TABLE `side_volume_entries` DISABLE KEYS */;
+INSERT INTO `side_volume_entries` VALUES (3,25,'P004',1000.00,NULL),(4,26,'P004',200.00,NULL),(5,27,'P004',20.00,NULL),(9,32,'P004',300.00,NULL),(14,34,'P004',30.00,NULL);
+/*!40000 ALTER TABLE `side_volume_entries` ENABLE KEYS */;
+UNLOCK TABLES;
+
+--
+-- Table structure for table `side_volume_months`
+--
+
+DROP TABLE IF EXISTS `side_volume_months`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `side_volume_months` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `username` varchar(30) NOT NULL,
+  `target_year` smallint(5) unsigned NOT NULL,
+  `target_month` tinyint(3) unsigned NOT NULL,
+  `created_date` datetime NOT NULL DEFAULT current_timestamp(),
+  `updated_date` datetime DEFAULT NULL ON UPDATE current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_side_volume_month` (`username`,`target_year`,`target_month`),
+  CONSTRAINT `side_volume_months_ibfk_1` FOREIGN KEY (`username`) REFERENCES `users` (`username`)
+) ENGINE=InnoDB AUTO_INCREMENT=61 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Dumping data for table `side_volume_months`
+--
+
+LOCK TABLES `side_volume_months` WRITE;
+/*!40000 ALTER TABLE `side_volume_months` DISABLE KEYS */;
+INSERT INTO `side_volume_months` VALUES (25,'ESK320289',2026,1,'2026-10-07 20:05:11',NULL),(26,'ESK320289',2026,2,'2026-10-07 20:05:11',NULL),(27,'ESK320289',2026,3,'2026-10-07 20:05:11',NULL),(28,'ESK320289',2026,4,'2026-10-07 20:05:11',NULL),(29,'ESK320289',2026,5,'2026-10-07 20:05:11',NULL),(30,'ESK320289',2026,6,'2026-10-07 20:05:11',NULL),(31,'ESK320289',2026,7,'2026-10-07 20:05:11',NULL),(32,'ESK320289',2026,8,'2026-10-07 20:05:11',NULL),(33,'ESK320289',2026,9,'2026-10-07 20:05:11',NULL),(34,'ESK320289',2026,10,'2026-10-07 20:05:11',NULL),(35,'ESK320289',2026,11,'2026-10-07 20:05:11',NULL),(36,'ESK320289',2026,12,'2026-10-07 20:05:11',NULL);
+/*!40000 ALTER TABLE `side_volume_months` ENABLE KEYS */;
+UNLOCK TABLES;
+
+--
+-- Table structure for table `statuses`
+--
+
+DROP TABLE IF EXISTS `statuses`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `statuses` (
+  `id` smallint(5) unsigned NOT NULL AUTO_INCREMENT,
+  `status_name` varchar(50) NOT NULL,
+  `sort_order` smallint(6) NOT NULL DEFAULT 0,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `status_name` (`status_name`)
+) ENGINE=InnoDB AUTO_INCREMENT=6 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Dumping data for table `statuses`
+--
+
+LOCK TABLES `statuses` WRITE;
+/*!40000 ALTER TABLE `statuses` DISABLE KEYS */;
+INSERT INTO `statuses` VALUES (1,'Not Started',1),(2,'In Progress',2),(3,'Achieved',3),(4,'Not Achieved',4),(5,'Canceled',5);
+/*!40000 ALTER TABLE `statuses` ENABLE KEYS */;
+UNLOCK TABLES;
+
+--
+-- Table structure for table `users`
+--
+
+CREATE TABLE daily_task_months (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  username VARCHAR(30) NOT NULL,
+  task_month TINYINT UNSIGNED NOT NULL,
+  task_year SMALLINT UNSIGNED NOT NULL,
+  created_date DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_date DATETIME NULL ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_daily_task_month (username, task_year, task_month),
+  FOREIGN KEY (username) REFERENCES users(username)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE daily_task_entries (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  month_record_id INT UNSIGNED NOT NULL,
+  day_of_month TINYINT UNSIGNED NOT NULL,
+  learn TINYINT(1) NOT NULL DEFAULT 0,
+  video_onboarding TINYINT(1) NOT NULL DEFAULT 0,
+  consume_product TINYINT(1) NOT NULL DEFAULT 0,
+  repeat_order TINYINT(1) NOT NULL DEFAULT 0,
+  attend_zoom TINYINT(1) NOT NULL DEFAULT 0,
+  contact_upline TINYINT(1) NOT NULL DEFAULT 0,
+  sponsoring TINYINT(1) NOT NULL DEFAULT 0,
+  UNIQUE KEY uq_daily_task_day (month_record_id, day_of_month),
+  FOREIGN KEY (month_record_id) REFERENCES daily_task_months(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE customers (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  username VARCHAR(30) NOT NULL,
+  name VARCHAR(120) NOT NULL,
+  phone_number VARCHAR(40) NULL,
+  birth_date DATE NULL,
+  order_date DATE NULL,
+  notes TEXT NULL,
+  created_date DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_date DATETIME NULL ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_customers_user_name (username, name),
+  FOREIGN KEY (username) REFERENCES users(username)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE customer_products (
+  customer_id INT UNSIGNED NOT NULL,
+  product_code VARCHAR(20) NOT NULL,
+  PRIMARY KEY (customer_id, product_code),
+  FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE,
+  FOREIGN KEY (product_code) REFERENCES products(product_code)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE activity_plans (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  username VARCHAR(30) NOT NULL,
+  plan_month TINYINT UNSIGNED NOT NULL,
+  plan_year SMALLINT UNSIGNED NOT NULL,
+  created_date DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_date DATETIME NULL ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_activity_plan (username, plan_year, plan_month),
+  FOREIGN KEY (username) REFERENCES users(username)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE activity_plan_entries (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  activity_plan_id INT UNSIGNED NOT NULL,
+  day_of_month TINYINT UNSIGNED NOT NULL,
+  activity TEXT NULL,
+  status_id SMALLINT UNSIGNED NULL,
+  UNIQUE KEY uq_activity_plan_day (activity_plan_id, day_of_month),
+  FOREIGN KEY (activity_plan_id) REFERENCES activity_plans(id) ON DELETE CASCADE,
+  FOREIGN KEY (status_id) REFERENCES statuses(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE side_volume_months (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  username VARCHAR(30) NOT NULL,
+  target_year SMALLINT UNSIGNED NOT NULL,
+  target_month TINYINT UNSIGNED NOT NULL,
+  created_date DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_date DATETIME NULL ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_side_volume_month (username, target_year, target_month),
+  FOREIGN KEY (username) REFERENCES users(username)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE side_volume_entries (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  side_volume_month_id INT UNSIGNED NOT NULL,
+  product_code VARCHAR(20) NOT NULL,
+  target_value DECIMAL(15,2) NULL,
+  actual_value DECIMAL(15,2) NULL,
+  UNIQUE KEY uq_side_volume_product (side_volume_month_id, product_code),
+  FOREIGN KEY (side_volume_month_id) REFERENCES side_volume_months(id) ON DELETE CASCADE,
+  FOREIGN KEY (product_code) REFERENCES products(product_code)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

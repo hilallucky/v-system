@@ -107,7 +107,7 @@ export function AuthPanel({
           {isSignUp ? "Already have an account?" : "New to the workspace?"}{" "}
           <button
             type="button"
-            className="font-semibold text-blue-700 hover:underline"
+            className="font-semibold text-[#4A2260] hover:text-[#754691] hover:underline"
             onClick={() => setMode(isSignUp ? "login" : "signup")}
           >
             {isSignUp ? "Log in" : "Create an account"}

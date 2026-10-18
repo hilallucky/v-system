@@ -7,6 +7,7 @@ import { z } from "zod";
 import { database, uploadDirectory } from "../../database.js";
 import { getLinkPreview } from "../../link-preview.js";
 import { ApiError } from "../../types.js";
+import { addContentNotifications } from "../notifications/service.js";
 
 interface ItemRow extends RowDataPacket {
   id: string;
@@ -169,23 +170,35 @@ export async function getFolderPath(folderId: string) {
 export async function addFolder(
   input: { name: string; parentId: string | null },
   owner: string,
+  ownerId: string,
 ) {
   await assertParentFolder(input.parentId);
   await assertUniqueName(input.name, input.parentId);
   const now = new Date().toISOString();
   const id = randomUUID();
   const db = await database;
-  await db.execute(`
-    INSERT INTO bc_items (id, parent_id, name, kind, modified_at, owner, status)
-    VALUES (?, ?, ?, 'folder', ?, ?, 'Ready')
-  `, [id, input.parentId, input.name, now, owner]);
-  const [rows] = await db.execute<ItemRow[]>(`${itemSelect} WHERE bc_items.id = ?`, [id]);
-  return toItem(rows[0]);
+  const connection = await db.getConnection();
+  try {
+    await connection.beginTransaction();
+    await connection.execute(`
+      INSERT INTO bc_items (id, parent_id, name, kind, modified_at, owner, status)
+      VALUES (?, ?, ?, 'folder', ?, ?, 'Ready')
+    `, [id, input.parentId, input.name, now, owner]);
+    await addContentNotifications(connection, { itemId: id, ownerId });
+    const [rows] = await connection.execute<ItemRow[]>(`${itemSelect} WHERE bc_items.id = ?`, [id]);
+    await connection.commit();
+    return toItem(rows[0]);
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
 }
 
 export async function addFile(
   file: Express.Multer.File,
-  input: { parentId: string | null; owner: string },
+  input: { parentId: string | null; owner: string; ownerId: string },
 ) {
   await assertParentFolder(input.parentId);
   const name = basename(file.originalname.replaceAll("\\", "/")).trim();
@@ -194,18 +207,30 @@ export async function addFile(
   const now = new Date().toISOString();
   const id = randomUUID();
   const db = await database;
-  await db.execute(`
-    INSERT INTO bc_items (
-      id, parent_id, name, kind, mime_type, size, modified_at, owner, status, stored_name
-    ) VALUES (?, ?, ?, 'file', ?, ?, ?, ?, 'Ready', ?)
-  `, [id, input.parentId, safeName, file.mimetype, file.size, now, input.owner, file.filename]);
-  const [rows] = await db.execute<ItemRow[]>(`${itemSelect} WHERE bc_items.id = ?`, [id]);
-  return toItem(rows[0]);
+  const connection = await db.getConnection();
+  try {
+    await connection.beginTransaction();
+    await connection.execute(`
+      INSERT INTO bc_items (
+        id, parent_id, name, kind, mime_type, size, modified_at, owner, status, stored_name
+      ) VALUES (?, ?, ?, 'file', ?, ?, ?, ?, 'Ready', ?)
+    `, [id, input.parentId, safeName, file.mimetype, file.size, now, input.owner, file.filename]);
+    await addContentNotifications(connection, { itemId: id, ownerId: input.ownerId });
+    const [rows] = await connection.execute<ItemRow[]>(`${itemSelect} WHERE bc_items.id = ?`, [id]);
+    await connection.commit();
+    return toItem(rows[0]);
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
 }
 
 export async function addLink(
   input: { url: string; name?: string; parentId: string | null },
   owner: string,
+  ownerId: string,
 ) {
   await assertParentFolder(input.parentId);
   const preview = await getLinkPreview(input.url);
@@ -214,22 +239,40 @@ export async function addLink(
   const id = randomUUID();
   const now = new Date().toISOString();
   const db = await database;
-  await db.execute(`
-    INSERT INTO bc_items (
-      id, parent_id, name, kind, mime_type, modified_at, owner, status,
-      url, thumbnail_url, description
-    ) VALUES (?, ?, ?, 'link', 'text/html', ?, ?, 'Ready', ?, ?, ?)
-  `, [
-    id,
-    input.parentId,
-    name,
-    now,
-    owner,
-    preview.url,
-    preview.thumbnailUrl,
-    preview.description,
-  ]);
+  const connection = await db.getConnection();
+  try {
+    await connection.beginTransaction();
+    await connection.execute(`
+      INSERT INTO bc_items (
+        id, parent_id, name, kind, mime_type, modified_at, owner, status,
+        url, thumbnail_url, description
+      ) VALUES (?, ?, ?, 'link', 'text/html', ?, ?, 'Ready', ?, ?, ?)
+    `, [
+      id,
+      input.parentId,
+      name,
+      now,
+      owner,
+      preview.url,
+      preview.thumbnailUrl,
+      preview.description,
+    ]);
+    await addContentNotifications(connection, { itemId: id, ownerId });
+    const [rows] = await connection.execute<ItemRow[]>(`${itemSelect} WHERE bc_items.id = ?`, [id]);
+    await connection.commit();
+    return toItem(rows[0]);
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
+}
+
+export async function getItem(id: string) {
+  const db = await database;
   const [rows] = await db.execute<ItemRow[]>(`${itemSelect} WHERE bc_items.id = ?`, [id]);
+  if (!rows[0]) throw new ApiError(404, "Content item was not found.");
   return toItem(rows[0]);
 }
 

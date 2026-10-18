@@ -13,8 +13,9 @@ src/
   App.tsx
   components/              Shared workspace UI and atomic controls
   features/
-    admin/                 Administrator landing/dashboard
+    admin/                 Administrator landing, dashboard and user management
     follow-ups/            User and administrator follow-up workflow
+    playbooks/             Seven user-owned Playbook forms
   lib/api.ts               Typed REST client and shared API models
   styles.css
 server/
@@ -30,6 +31,7 @@ server/
     auth/                  Authentication and session use cases
     content/               File/folder/link use cases
     follow-ups/            Follow-up API use cases
+    playbooks/             Validated, user-scoped form APIs and persistence
   database.ts              Migration runner and database lifecycle
   index.ts                 Server composition root
   link-preview.ts          Link-preview infrastructure helper
@@ -49,6 +51,7 @@ src/
     auth/                  Sign-in, sign-up and session UI
     content/               Browse, preview and download bank content
     follow-ups/            Follow-up lists, detail and status forms
+    playbooks/             Checklist, targets, activity, customer and prospect forms
     user/                  User landing page and personal navigation
   lib/                     Shared API client, utilities and query setup
 server/
@@ -59,6 +62,7 @@ server/
     auth/
     content/
     follow-ups/            Follow-up policy, validation and persistence
+    notifications/         Persistent notifications for newly added bank content
     user/                  User-facing dashboard/query use cases
   infrastructure/
     database/              Database adapter and migrations
@@ -82,15 +86,18 @@ local disk. `DB_TYPE` currently accepts only `mysql`; `FILE_STORAGE_PROVIDER` cu
 accepts only `local`. PostgreSQL/SQLite drivers, RabbitMQ/Redis queue adapters,
 SMTP delivery, and connection settings for those providers are not yet
 implemented. Admin/user
-roles and follow-up workflows are implemented on the current MySQL adapter.
+roles, follow-up workflows, and user-owned Playbook forms are implemented on
+the current MySQL adapter. Playbook form data uses `pb_` tables and the shared
+user identity; old dump credentials and records are not implicitly assigned to
+current users.
 Add further providers behind the infrastructure/module boundaries above rather
 than making the UI or route handlers provider-aware.
 
 The default database is `v_system`. Table names are scoped by application:
 `bc_` for bank content, `pb_` for playbooks, and `others_` for shared/system
 tables. User accounts and sessions are shared in `users` and `sessions`, with
-the migration ledger in `schema_migrations`. Authorization roles are application-specific (`bc_user_roles`
-for bank-content roles), so an administrator in one application does not
+the migration ledger in `schema_migrations`. Bank-content authorization roles
+are stored in `user_roles`, so an administrator in one application does not
 automatically gain privileges in another. Startup migrates existing table names
 and moves current bank-content roles while preserving user accounts and sessions. It
 stops with an explicit error if both legacy and prefixed versions of a table

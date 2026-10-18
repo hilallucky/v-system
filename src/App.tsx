@@ -3,14 +3,21 @@ import { AlertCircle, Check, ChevronRight, Download, LoaderCircle, Search, X } f
 import { useEffect, useRef, useState } from "react";
 import { AddLinkDialog } from "./components/add-link-dialog";
 import { AuthPanel } from "./components/auth-panel";
-import { AppSidebar, type WorkspacePage, type WorkspaceView } from "./components/app-sidebar";
+import {
+  AppSidebar,
+  isPlaybookPage,
+  type WorkspacePage,
+  type WorkspaceView,
+} from "./components/app-sidebar";
 import { FileList, FileListHeader, type Sort } from "./components/file-list";
 import { FileToolbar } from "./components/file-toolbar";
 import { WorkspaceHeader } from "./components/workspace-header";
 import { WorkspaceStatsCards } from "./components/workspace-stats";
 import { UserProfileDialog } from "./components/user-profile-dialog";
 import { AdminDashboard } from "./features/admin/admin-dashboard";
+import { UserManagementPanel } from "./features/admin/user-management-panel";
 import { FollowUpsPanel } from "./features/follow-ups/follow-ups-panel";
+import { PlaybooksPanel } from "./features/playbooks/playbooks-panel";
 import { OfficeDocumentPreview } from "./features/content/office-document-preview";
 import type { OfficePreviewFormat } from "./features/content/office-preview";
 import { Button } from "./components/ui/button";
@@ -28,6 +35,7 @@ import { cn } from "./lib/utils";
 import {
   createFolder,
   createLink,
+  getContentItem,
   getCurrentUser,
   getFolderPath,
   getItems,
@@ -36,6 +44,7 @@ import {
   logOut,
   signUp,
   uploadFile,
+  type ContentNotification,
   type ContentItem,
 } from "./lib/api";
 
@@ -91,6 +100,7 @@ function App() {
         ["folder-children"],
         ["stats"],
         ["folder-path"],
+        ["content-notifications"],
       ]) {
         queryClient.removeQueries({ queryKey });
       }
@@ -288,6 +298,31 @@ function App() {
     setPreviewItem(item);
   }
 
+  async function openNotification(notification: ContentNotification) {
+    try {
+      const item = await getContentItem(notification.itemId);
+      setPage("content");
+      setSearch("");
+      setSearchInput("");
+      setView("all");
+      setFolderId(item.kind === "folder" ? item.id : item.parentId);
+      if (item.kind === "file") {
+        setPreviewItem(item);
+      } else if (item.kind === "link") {
+        if (item.url && ["http:", "https:"].includes(new URL(item.url).protocol)) {
+          window.location.assign(item.url);
+        } else {
+          notify("This notification link does not have a valid website address.", "error");
+        }
+      }
+    } catch (error) {
+      notify(
+        error instanceof Error ? `Could not open notification: ${error.message}` : "Could not open notification.",
+        "error",
+      );
+    }
+  }
+
   function downloadItem(item: ContentItem) {
     if (!item.hasContent) {
       notify("This sample document has no file content to download.", "error");
@@ -316,7 +351,7 @@ function App() {
         search={searchInput}
         onSearchChange={setSearchInput}
         onHelp={() => notify("Search or choose a department to find bank content.")}
-        onNotifications={() => notify("You’re all caught up.")}
+        onOpenNotification={notification => void openNotification(notification)}
         user={authQuery.data}
         isLoggingOut={logoutMutation.isPending}
         onProfile={() => setProfileOpen(true)}
@@ -344,8 +379,12 @@ function App() {
         />
 
         <main className="min-w-0 flex-1 px-4 py-6 sm:px-7 lg:px-9">
-          {page === "follow-ups" ? (
+          {isPlaybookPage(page) ? (
+            <PlaybooksPanel key={page} form={page} />
+          ) : page === "follow-ups" ? (
             <FollowUpsPanel user={authQuery.data} />
+          ) : page === "user-management" && authQuery.data.role === "admin" ? (
+            <UserManagementPanel currentUserId={authQuery.data.id} />
           ) : page === "admin" && authQuery.data.role === "admin" ? (
             <AdminDashboard
               user={authQuery.data}
@@ -473,7 +512,7 @@ function App() {
                 type="button"
                 onClick={() => goToView("all")}
                 className={cn(
-                  "truncate hover:text-blue-700",
+                  "truncate hover:text-[#754691]",
                   !folderId && "font-semibold text-slate-800",
                 )}
               >
@@ -491,7 +530,7 @@ function App() {
                       setSearchInput("");
                     }}
                     className={cn(
-                      "truncate hover:text-blue-700",
+                      "truncate hover:text-[#754691]",
                       index === currentPath.length - 1 && "font-semibold text-slate-800",
                     )}
                   >
@@ -515,6 +554,7 @@ function App() {
                 stats={statsQuery.data}
                 error={statsQuery.isError ? statsQuery.error.message : undefined}
                 onRetry={() => void statsQuery.refetch()}
+                showNeedsReview={authQuery.data.role === "admin"}
               />
             )}
 
@@ -526,6 +566,7 @@ function App() {
               />
               <FileList
                 items={items}
+                isAdmin={authQuery.data.role === "admin"}
                 layout={layout}
                 search={search}
                 isPending={itemsQuery.isPending}

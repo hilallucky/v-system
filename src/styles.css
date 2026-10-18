@@ -5,7 +5,8 @@
   --color-muted: #7c8797;
   --color-border: #e8ebf0;
   --color-canvas: #f5f6f8;
-  --color-brand: #2859b2;
+  --color-brand: #4A2260;
+  --color-brand-hover: #754691;
 }
 
 :root {
@@ -46,6 +47,10 @@ button:disabled {
 }
 
 ::selection {
-  color: #1e4d9f;
-  background: #dfeaff;
+  color: #4A2260;
+  background: #f0e6f5;
+}
+
+a[href]:hover {
+  color: var(--color-brand-hover);
 }

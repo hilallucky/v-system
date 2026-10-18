@@ -95,6 +95,25 @@ export async function runMigrations(pool: Pool) {
     );
     if (applied.length > 0) continue;
 
+    let skipRoleTableRename = false;
+    if (filename === "009_rename_user_roles.sql") {
+      const [roleTables] = await pool.execute<Array<{ table_name: string } & RowDataPacket>>(`
+        SELECT table_name FROM information_schema.tables
+        WHERE table_schema = DATABASE()
+          AND table_name IN ('bc_user_roles', 'user_roles')
+      `);
+      const existingRoleTables = new Set(roleTables.map(row => row.table_name));
+      if (existingRoleTables.has("bc_user_roles") && existingRoleTables.has("user_roles")) {
+        throw new Error(
+          'Both "bc_user_roles" and "user_roles" exist. Resolve the duplicate role tables before starting the API.',
+        );
+      }
+      if (!existingRoleTables.has("bc_user_roles") && !existingRoleTables.has("user_roles")) {
+        throw new Error('Neither "bc_user_roles" nor "user_roles" exists; cannot migrate bank-content roles.');
+      }
+      skipRoleTableRename = existingRoleTables.has("user_roles");
+    }
+
     if (filename === identityMigrationName) {
       const [sharedTables] = await pool.execute<Array<{ table_name: string } & RowDataPacket>>(`
         SELECT table_name FROM information_schema.tables
@@ -129,6 +148,9 @@ export async function runMigrations(pool: Pool) {
     try {
       await connection.beginTransaction();
       for (const statement of statements) {
+        if (skipRoleTableRename && /^RENAME TABLE\s+bc_user_roles\s+TO\s+user_roles\s*$/i.test(statement)) {
+          continue;
+        }
         await connection.query(statement);
       }
       if (filename === identityMigrationName) migrationTable = "schema_migrations";

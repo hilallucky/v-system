@@ -9,9 +9,15 @@ interface WorkspaceStatsProps {
   stats?: WorkspaceStats;
   error?: string;
   onRetry: () => void;
+  showNeedsReview?: boolean;
 }
 
-export function WorkspaceStatsCards({ stats, error, onRetry }: WorkspaceStatsProps) {
+export function WorkspaceStatsCards({
+  stats,
+  error,
+  onRetry,
+  showNeedsReview = true,
+}: WorkspaceStatsProps) {
   if (error) {
     return (
       <div className="mb-5 flex flex-wrap items-center gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-[11px] text-red-700">
@@ -24,7 +30,10 @@ export function WorkspaceStatsCards({ stats, error, onRetry }: WorkspaceStatsPro
   }
 
   return (
-    <section className="mb-5 grid gap-3 sm:grid-cols-3" aria-label="Workspace overview">
+    <section
+      className={cn("mb-5 grid gap-3", showNeedsReview ? "sm:grid-cols-3" : "sm:grid-cols-2")}
+      aria-label="Workspace overview"
+    >
       <StatCard icon={<FolderClosed size={18} />} tone="blue" label="Total folders">
         {stats?.folders ?? "—"}
         <span className="ml-2 text-[9px] font-medium text-muted">across workspace</span>
@@ -33,10 +42,12 @@ export function WorkspaceStatsCards({ stats, error, onRetry }: WorkspaceStatsPro
         {stats?.documents ?? "—"}
         <span className="ml-2 text-[9px] font-medium text-emerald-700">securely stored</span>
       </StatCard>
-      <StatCard icon={<Clock3 size={18} />} tone="amber" label="Needs review">
-        {stats?.needsReview ?? "—"}
-        <span className="ml-2 text-[9px] font-medium text-amber-700">attention needed</span>
-      </StatCard>
+      {showNeedsReview && (
+        <StatCard icon={<Clock3 size={18} />} tone="amber" label="Needs review">
+          {stats?.needsReview ?? "—"}
+          <span className="ml-2 text-[9px] font-medium text-amber-700">attention needed</span>
+        </StatCard>
+      )}
     </section>
   );
 }

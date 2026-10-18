@@ -16,6 +16,9 @@ import {
   logIn,
   logOut,
   requireAdmin,
+  createManagedUser,
+  listManagedUsers,
+  setManagedUserActive,
   signUp,
   updateProfile,
 } from "../modules/auth/auth.js";
@@ -25,6 +28,7 @@ import {
   addFolder,
   getFileForDownload,
   getFolderPath,
+  getItem,
   getItems,
   getStats,
   removeUnrecordedUpload,
@@ -35,6 +39,17 @@ import {
   listFollowUps,
   updateFollowUp,
 } from "../modules/follow-ups/service.js";
+import {
+  deletePlaybookRecord,
+  getPlaybookCatalogs,
+  listPlaybookRecords,
+  playbookForms,
+  savePlaybookRecord,
+} from "../modules/playbooks/service.js";
+import {
+  listContentNotifications,
+  markContentNotificationRead,
+} from "../modules/notifications/service.js";
 import { ApiError } from "../types.js";
 
 const uuidSchema = z.string().uuid();
@@ -47,6 +62,12 @@ const folderInput = z.object({
     .regex(/^[^\\/:*?"<>|\u0000-\u001f]+$/, "Folder name contains unsupported characters."),
   parentId: uuidSchema.nullable().optional().default(null),
 });
+const managedUserInput = z.object({
+  fullName: z.string().trim().min(1).max(120),
+  email: z.string().trim().email().max(254).transform(value => value.toLowerCase()),
+  password: z.string().min(10).max(128),
+});
+const managedUserStatusInput = z.object({ isActive: z.boolean() });
 const itemQuery = z.object({
   folderId: z.union([z.literal("root"), uuidSchema]).optional().default("root"),
   view: z.enum(["all", "recent", "starred", "shared"]).optional().default("all"),
@@ -132,9 +153,42 @@ export function createApp() {
 
   api.use(authenticateSession);
 
+  api.get("/items/:id", async (request, response) => {
+    const id = uuidSchema.parse(request.params.id);
+    response.json({ data: await getItem(id) });
+  });
+
   api.put("/auth/profile", async (request, response) => {
     const input = profileInput.parse(request.body);
     response.json({ data: await updateProfile(response.locals.user.id, input) });
+  });
+
+  api.get("/admin/users", requireAdmin, async (_request, response) => {
+    response.json({ data: await listManagedUsers() });
+  });
+
+  api.post("/admin/users", requireAdmin, async (request, response) => {
+    const input = managedUserInput.parse(request.body);
+    response.status(201).json({ data: await createManagedUser(input) });
+  });
+
+  api.patch("/admin/users/:id/status", requireAdmin, async (request, response) => {
+    const id = uuidSchema.parse(request.params.id);
+    const input = managedUserStatusInput.parse(request.body);
+    response.json({
+      data: await setManagedUserActive(id, input.isActive, response.locals.user.id),
+    });
+  });
+
+  api.get("/notifications", async (_request, response) => {
+    response.json({ data: await listContentNotifications(response.locals.user.id) });
+  });
+
+  api.patch("/notifications/:id/read", async (request, response) => {
+    const id = z.coerce.number().int().positive().parse(request.params.id);
+    response.json({
+      data: await markContentNotificationRead(id, response.locals.user.id),
+    });
   });
 
   api.get("/follow-ups", async (_request, response) => {
@@ -154,6 +208,32 @@ export function createApp() {
     const input = followUpUpdateInput.parse(request.body);
     response.json({
       data: await updateFollowUp(id, input),
+    });
+  });
+
+  api.get("/playbooks/catalogs", async (_request, response) => {
+    response.json({ data: await getPlaybookCatalogs() });
+  });
+
+  api.get("/playbooks/:form", async (request, response) => {
+    const form = z.enum(playbookForms).parse(request.params.form);
+    response.json({
+      data: await listPlaybookRecords(form, response.locals.user.id),
+    });
+  });
+
+  api.post("/playbooks/:form", async (request, response) => {
+    const form = z.enum(playbookForms).parse(request.params.form);
+    response.status(201).json({
+      data: await savePlaybookRecord(form, response.locals.user.id, request.body),
+    });
+  });
+
+  api.delete("/playbooks/:form/:id", async (request, response) => {
+    const form = z.enum(playbookForms).parse(request.params.form);
+    const id = z.coerce.number().int().positive().parse(request.params.id);
+    response.json({
+      data: await deletePlaybookRecord(form, response.locals.user.id, id),
     });
   });
 
@@ -180,14 +260,18 @@ export function createApp() {
 
   api.post("/folders", requireAdmin, async (request, response) => {
     const input = folderInput.parse(request.body);
-    const folder = await addFolder(input, response.locals.user.fullName);
+    const folder = await addFolder(
+      input,
+      response.locals.user.fullName,
+      response.locals.user.id,
+    );
     response.status(201).json({ data: folder });
   });
 
   api.post("/links", requireAdmin, async (request, response) => {
     const input = linkInput.parse(request.body);
     response.status(201).json({
-      data: await addLink(input, response.locals.user.fullName),
+      data: await addLink(input, response.locals.user.fullName, response.locals.user.id),
     });
   });
 
@@ -209,6 +293,7 @@ export function createApp() {
       const file = await addFile(request.file, {
         parentId,
         owner: response.locals.user.fullName,
+        ownerId: response.locals.user.id,
       });
       response.status(201).json({ data: file });
     } catch (error) {

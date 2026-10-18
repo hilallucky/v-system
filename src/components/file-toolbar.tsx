@@ -40,7 +40,7 @@ export function FileToolbar({
   return (
     <Card
       className={`mb-5 flex min-h-12 flex-wrap items-center gap-2 p-2 transition-colors ${
-        isDragging ? "border-blue-400 bg-blue-50" : ""
+        isDragging ? "border-[#9b78ad] bg-[#f5eff8]" : ""
       }`}
       onDragEnter={event => {
         event.preventDefault();
